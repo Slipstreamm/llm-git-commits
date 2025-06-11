@@ -14,6 +14,11 @@ An AI-powered command-line tool that automatically generates meaningful commit m
 - **Visual Diff**: Colored output showing additions, deletions, and context
 - **Flexible Options**: Auto-stage all changes, select specific files, or choose individual hunks
 
+### 🧠 Intelligent Staging
+- **Automatic Commit Planning**: Let the LLM analyze all your changes and group them into logical, separate commits.
+- **Multi-Commit Workflow**: Automatically generates multiple focused commit messages for the planned commits.
+- **Interactive Confirmation**: Review and approve each proposed commit before it's made.
+
 ### 📚 Documentation Management
 - **Smart Analysis**: Automatically suggests documentation updates based on code changes
 - **CRUD Operations**: Create, update, and manage documentation files
@@ -23,7 +28,7 @@ An AI-powered command-line tool that automatically generates meaningful commit m
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.11+
+- Python 3.10+
 - Git repository
 - API keys for OpenRouter, OpenAI, Anthropic, or Google Gemini
 
@@ -34,22 +39,26 @@ An AI-powered command-line tool that automatically generates meaningful commit m
    pip install llm-git-commits
    ```
 
-3. **Set up your API key**:
+2. **Configure the tool**:
+   Run the interactive configuration wizard to set up your provider, API key, and default model.
    ```bash
-   export OPENROUTER_API_KEY="your-api-key-here"
+   llm-git-commits config
    ```
 
 ### Basic Usage
 
 ```bash
 # Interactive mode - stage changes selectively
-llm-git-commits --api-key $OPENROUTER_API_KEY --interactive
+llm-git-commits -i
 
 # Auto-commit all changes
-llm-git-commits --api-key $OPENROUTER_API_KEY --auto-stage
+llm-git-commits -a
 
 # Manage documentation
-llm-git-commits --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
+llm-git-commits --docs-dir ./docs --docs-only
+
+# Let the AI create multiple commits automatically
+llm-git-commits --intelligent
 ```
 
 ## 📖 Detailed Usage
@@ -58,19 +67,19 @@ llm-git-commits --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
 
 | Option | Short | Description |
 |--------|-------|-------------|
-| `--api-key` | | **Required.** OpenRouter API key |
-| `--model` | | AI model to use (default: `anthropic/claude-3-sonnet`) |
-| `--interactive` | `-i` | Interactive hunk staging mode |
-| `--auto-stage` | `-a` | Automatically stage all changes |
-| `--docs-dir` | | Path to documentation directory |
-| `--docs-only` | | Only perform documentation management |
-| `--commit-message` | `-m` | Override generated commit message |
+| `config` | | Run the interactive configuration wizard. |
+| `--interactive` | `-i` | Interactive hunk staging mode. |
+| `--auto-stage` | `-a` | Automatically stage all changes. |
+| `--intelligent` | | Use LLM to group changes into multiple commits. |
+| `--docs-dir` | | Path to documentation directory. |
+| `--docs-only` | | Only perform documentation management. |
+| `--commit-message` | `-m` | Override generated commit message. |
 
 ### Usage Examples
 
 #### 1. Interactive Staging (Recommended)
 ```bash
-llm-git-commits --api-key $OPENROUTER_API_KEY -i
+llm-git-commits -i
 ```
 
 This mode lets you:
@@ -80,14 +89,14 @@ This mode lets you:
 
 #### 2. Quick Commit All Changes
 ```bash
-llm-git-commits --api-key $OPENROUTER_API_KEY -a
+llm-git-commits -a
 ```
 
 Perfect for when you want to commit all your changes with an AI-generated message.
 
 #### 3. Documentation Management
 ```bash
-llm-git-commits --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
+llm-git-commits --docs-dir ./docs --docs-only
 ```
 
 The tool will:
@@ -96,10 +105,11 @@ The tool will:
 - Help create or update documentation files
 - Use a simple patch system for precise edits
 
-#### 4. Custom Model
+#### 4. Intelligent Staging
 ```bash
-llm-git-commits --api-key $OPENROUTER_API_KEY --model "openai/gpt-4-turbo" -i
+llm-git-commits --intelligent
 ```
+This mode analyzes all modified files and uses the LLM to group related changes into separate, logical commits. It will then propose each commit for your approval.
 
 ## 🛠️ How It Works
 
@@ -190,28 +200,25 @@ Proceed with commit? [Y/n]:
 
 ## 🔧 Configuration
 
-### Environment Variables
+### Configuration File
 
-Set these for convenience:
+The first time you run `llm-git-commits config`, it will create a configuration file at `~/.config/git-commit-tool/config.ini`. This file stores your API keys, default model, and other preferences.
 
-```bash
-export OPENROUTER_API_KEY="your-api-key"
-export GIT_COMMIT_TOOL_MODEL="anthropic/claude-3-sonnet"
-export GIT_COMMIT_TOOL_DOCS_DIR="./docs"
-```
+You can edit this file manually or re-run `llm-git-commits config` at any time.
 
-### Model Options
+### Model Selection
 
-Popular models available through OpenRouter:
+During the interactive configuration, you can search for and select from all models available from your chosen provider.
 
-| Model | Best For | Context |Cost |
-|-------|----------|------|------|
-| `anthropic/claude-sonnet-4` (recommended) | Balanced performance | 200K | $$ |
-| `anthropic/claude-opus-4` (best as of 6/10/25) | Highest quality | 200K | $$$$ |
-| `google/gemini-2.5-pro-preview` | High quality | 1M | $$ |
-| `google/gemini-2.5-flash-preview-05-20` | Fast, good quality | 1M | $ |
-| `meta-llama/llama-4-maverick:free` | Free and capable | 128K | Free |
+Popular models include:
 
+| Provider | Model Name |
+|---|---|
+| **OpenRouter** | `google/gemini-2.5-flash-preview-05-20` (Default) |
+| | `anthropic/claude-sonnet-4-20250514` |
+| | `openai/gpt-4o-mini` |
+| **OpenAI** | `gpt-4o-mini` |
+| **Anthropic** | `claude-sonnet-4-20250514` |
 
 ## 🤝 Contributing
 
