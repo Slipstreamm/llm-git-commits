@@ -218,11 +218,11 @@ class IntelligentStager:
             {
                 "role": "system",
                 "content": f"""You are an expert at analyzing code changes and creating a logical series of git commits.
-Your task is to group the provided hunks into separate, focused commits.
+Your task is to group all the provided hunks into separate, focused commits.
 You must return a JSON object with two keys: "commit_plan" (a list of planned commits) and "unplanned_hunk_ids" (a list of IDs for hunks that do not fit).
 Each commit in "commit_plan" must have "commit_message" and "hunk_ids".
 Grouping Strategy: {strategy}
-Analyze the hunks and create a clear, logical commit plan. Ensure every hunk ID is either in a commit or in "unplanned_hunk_ids".
+Analyze the hunks and create a clear, logical commit plan. Your primary goal is to create a comprehensive commit plan that includes all changes. Avoid leaving any hunks unplanned if possible. If you absolutely cannot group a hunk, you can place its ID in 'unplanned_hunk_ids', but this should be a last resort.
 """
             },
             {
@@ -359,25 +359,48 @@ class GitCommitTool:
                 except (json.JSONDecodeError, KeyError, IndexError):
                     continue # Ignore malformed chunks
     
-    def get_modified_files(self) -> List[str]:
-        """Get list of modified files in the repository"""
+    def get_modified_files(self) -> List[Tuple[str, str]]:
+        """Get list of modified and untracked files."""
         result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD"],
-            capture_output=True, text=True, encoding='utf-8'
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, check=True, encoding='utf-8'
         )
-        return [f for f in result.stdout.strip().split('\n') if f]
-    
-    def get_file_diff(self, filepath: str) -> str:
+        files = []
+        for line in result.stdout.strip().split('\n'):
+            if not line:
+                continue
+            status = line[:2]
+            filepath = line[3:]
+            if status.strip() == 'R':
+                # Handle renamed files: R old_path -> new_path
+                _, filepath = filepath.split(' -> ')
+            files.append((status, filepath))
+        return files
+
+    def get_file_diff(self, file_info: Tuple[str, str]) -> str:
         """Get diff for a specific file"""
-        result = subprocess.run(
-            ["git", "diff", "HEAD", "--", filepath],
-            capture_output=True, text=True, encoding='utf-8'
-        )
+        status, filepath = file_info
+        
+        # For untracked files, diff against /dev/null
+        if status.strip() == '??':
+            # Ensure the file is not empty before diffing
+            if os.path.getsize(filepath) == 0:
+                return ""
+            result = subprocess.run(
+                ["git", "diff", "--no-index", "--", "/dev/null", filepath],
+                capture_output=True, text=True, encoding='utf-8'
+            )
+        else:
+            result = subprocess.run(
+                ["git", "diff", "HEAD", "--", filepath],
+                capture_output=True, text=True, encoding='utf-8'
+            )
         return result.stdout
     
-    def get_file_hunks(self, filepath: str) -> List[Dict]:
+    def get_file_hunks(self, file_info: Tuple[str, str]) -> List[Dict]:
         """Parse file diff into individual hunks"""
-        diff = self.get_file_diff(filepath)
+        diff = self.get_file_diff(file_info)
+        filepath = file_info[1]
         if not diff:
             return []
         
@@ -407,12 +430,13 @@ class GitCommitTool:
         
         return hunks
     
-    def interactive_stage_hunks(self, filepath: str) -> List[Dict]:
+    def interactive_stage_hunks(self, file_info: Tuple[str, str]) -> List[Dict]:
         """Interactively stage hunks from a file"""
-        hunks = self.get_file_hunks(filepath)
+        hunks = self.get_file_hunks(file_info)
         if not hunks:
             return []
         
+        filepath = file_info[1]
         selected_hunks = []
         
         print(f"\n📝 File: {filepath}")
@@ -567,8 +591,9 @@ Analyze the git diff and write a concise, informative commit message."""
         """Get all hunks from all modified files"""
         all_hunks = []
         modified_files = self.get_modified_files()
-        for filepath in modified_files:
-            hunks = self.get_file_hunks(filepath)
+        for file_info in modified_files:
+            hunks = self.get_file_hunks(file_info)
+            filepath = file_info[1]
             # Add a unique ID to each hunk for tracking
             for i, hunk in enumerate(hunks):
                 hunk['id'] = f"{filepath}-{i}"
@@ -609,7 +634,8 @@ Analyze the git diff and write a concise, informative commit message."""
         recent_commits = result.stdout
         
         # Get current staged/modified files
-        modified_files = self.get_modified_files()
+        modified_files_with_status = self.get_modified_files()
+        modified_files = [f for _, f in modified_files_with_status]
         
         # Get project structure
         important_files = []
@@ -1106,11 +1132,12 @@ def main():
             return
         
         # Regular commit mode
-        modified_files = tool.get_modified_files()
-        if not modified_files:
+        modified_files_with_status = tool.get_modified_files()
+        if not modified_files_with_status:
             print("✨ No modified files found!")
             return
         
+        modified_files = [f for _, f in modified_files_with_status]
         print(f"📁 Modified files: {', '.join(modified_files)}")
         
         if args.intelligent:
@@ -1181,8 +1208,8 @@ def main():
         elif args.interactive:
             # Interactive staging mode
             all_selected_hunks = []
-            for filepath in modified_files:
-                selected_hunks = tool.interactive_stage_hunks(filepath)
+            for status, filepath in modified_files_with_status:
+                selected_hunks = tool.interactive_stage_hunks((status, filepath))
                 all_selected_hunks.extend(selected_hunks)
             
             if all_selected_hunks:
@@ -1208,8 +1235,8 @@ def main():
                 print("✅ Auto-staged all changes")
             elif choice == '2':
                 all_selected_hunks = []
-                for filepath in modified_files:
-                    selected_hunks = tool.interactive_stage_hunks(filepath)
+                for status, filepath in modified_files_with_status:
+                    selected_hunks = tool.interactive_stage_hunks((status, filepath))
                     all_selected_hunks.extend(selected_hunks)
 
                 if all_selected_hunks:
