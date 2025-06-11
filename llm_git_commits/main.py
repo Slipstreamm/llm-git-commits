@@ -24,6 +24,52 @@ except ImportError:
     print("Please install requests: pip install requests")
     sys.exit(1)
 
+import time
+import threading
+import itertools
+
+class LLMFeedback:
+    """A simple console feedback provider for long-running operations."""
+    def __init__(self, message="🤖 Generating response..."):
+        self.message = message
+        self._thread = threading.Thread(target=self._animate, daemon=True)
+        self._stop_event = threading.Event()
+        self.start_time: Optional[float] = None
+        self.final_message = ""
+
+    def _animate(self):
+        """Cycle through spinner characters."""
+        spinner = itertools.cycle(['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'])
+        
+        while not self._stop_event.is_set():
+            if self.start_time:
+                elapsed = time.time() - self.start_time
+                sys.stdout.write(f'\r{next(spinner)} {self.message} ({elapsed:.1f}s) ')
+            else:
+                sys.stdout.write(f'\r{next(spinner)} {self.message} ')
+            sys.stdout.flush()
+            time.sleep(0.1)
+            
+        # Clear the line before printing the final message
+        sys.stdout.write(f'\r{" " * (len(self.message) + 20)}\r')
+        if self.final_message:
+            print(self.final_message)
+
+    def start(self):
+        """Start the feedback animation."""
+        self.start_time = time.time()
+        self._thread.start()
+
+    def stop(self, final_message: str = ""):
+        """Stop the feedback animation."""
+        self.final_message = final_message
+        self._stop_event.set()
+        if self._thread.is_alive():
+            self._thread.join()
+    
+    def update_message(self, new_message: str):
+        """Update the message displayed by the feedback animation."""
+        self.message = new_message
 @dataclass
 class ProviderConfig:
     """Configuration for different LLM providers"""
