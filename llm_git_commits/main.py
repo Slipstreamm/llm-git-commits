@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Intelligent Git Commit Tool with LLM Integration
 Automatically generates commit messages and manages documentation using OpenRouter API
@@ -13,6 +14,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 import tempfile
 import difflib
+import configparser
+from dataclasses import dataclass
 
 try:
     import requests
@@ -20,8 +23,136 @@ except ImportError:
     print("Please install requests: pip install requests")
     sys.exit(1)
 
+@dataclass
+class ProviderConfig:
+    """Configuration for different LLM providers"""
+    name: str
+    base_url: str
+    headers_template: Dict[str, str]
+    model_format: str  # How to format model names for this provider
+    
+    @classmethod
+    def get_providers(cls) -> Dict[str, 'ProviderConfig']:
+        return {
+            "openrouter": cls(
+                name="OpenRouter",
+                base_url="https://openrouter.ai/api/v1",
+                headers_template={
+                    "Authorization": "Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/llm-git-commits",
+                    "X-Title": "Git Commit Tool"
+                },
+                model_format="{model}"  # Use model name as-is
+            ),
+            "openai": cls(
+                name="OpenAI",
+                base_url="https://api.openai.com/v1",
+                headers_template={
+                    "Authorization": "Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                model_format="{model}"
+            ),
+            "anthropic": cls(
+                name="Anthropic",
+                base_url="https://api.anthropic.com/v1",
+                headers_template={
+                    "x-api-key": "{api_key}",
+                    "Content-Type": "application/json",
+                    "anthropic-version": "2023-06-01"
+                },
+                model_format="{model}"
+            ),
+            "gemini": cls(
+                name="Google Gemini",
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai",
+                headers_template={
+                    "Authorization": "Bearer {api_key}",
+                    "Content-Type": "application/json"
+                },
+                model_format="{model}"
+            )
+        }
+
+class ConfigManager:
+    def __init__(self):
+        self.config_dir = Path.home() / ".config" / "git-commit-tool"
+        self.config_file = self.config_dir / "config.ini"
+        self.config = configparser.ConfigParser()
+        self.load_config()
+    
+    def load_config(self):
+        """Load configuration from file"""
+        if self.config_file.exists():
+            self.config.read(self.config_file)
+        else:
+            self._create_default_config()
+    
+    def _create_default_config(self):
+        """Create default configuration"""
+        self.config['DEFAULT'] = {
+            'provider': 'openrouter',
+            'model': 'google/gemini-2.0-flash-exp',
+            'api_key': '',
+            'docs_dir': 'docs',
+            'auto_stage': 'false',
+            'interactive': 'false'
+        }
+        
+        self.config['providers'] = {}
+        for name, provider in ProviderConfig.get_providers().items():
+            self.config[f'provider.{name}'] = {
+                'api_key': '',
+                'model': self._get_default_model(name)
+            }
+    
+    def _get_default_model(self, provider: str) -> str:
+        """Get default model for each provider"""
+        defaults = {
+            'openrouter': 'google/gemini-2.0-flash-exp',
+            'openai': 'gpt-4o-mini',
+            'anthropic': 'claude-3-5-sonnet-20241022',
+            'gemini': 'gemini-2.0-flash-exp'
+        }
+        return defaults.get(provider, 'gpt-3.5-turbo')
+    
+    def save_config(self):
+        """Save configuration to file"""
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        with open(self.config_file, 'w') as f:
+            self.config.write(f)
+    
+    def get(self, key: str, section: str = 'DEFAULT') -> str:
+        """Get configuration value"""
+        return self.config.get(section, key, fallback='')
+    
+    def set(self, key: str, value: str, section: str = 'DEFAULT'):
+        """Set configuration value"""
+        if section not in self.config:
+            self.config[section] = {}
+        self.config[section][key] = value
+    
+    def get_provider_config(self, provider: str) -> Tuple[str, str]:
+        """Get API key and model for a provider"""
+        section = f'provider.{provider}'
+        api_key = self.config.get(section, 'api_key', fallback='')
+        model = self.config.get(section, 'model', fallback=self._get_default_model(provider))
+        return api_key, model
+    
+    def set_provider_config(self, provider: str, api_key: str = None, model: str = None):
+        """Set provider configuration"""
+        section = f'provider.{provider}'
+        if section not in self.config:
+            self.config[section] = {}
+        
+        if api_key is not None:
+            self.config[section]['api_key'] = api_key
+        if model is not None:
+            self.config[section]['model'] = model
+
 class GitCommitTool:
-    def __init__(self, api_key: str, model: str = "google/gemini-2.5-flash-preview-05-20", base_url: str = "https://openrouter.ai/api/v1"):
+    def __init__(self, api_key: str, model: str = "anthropic/claude-3-sonnet", base_url: str = "https://openrouter.ai/api/v1"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
@@ -39,28 +170,63 @@ class GitCommitTool:
             raise Exception("Not in a git repository")
     
     def _call_llm(self, messages: List[Dict], temperature: float = 0.3) -> str:
-        """Make API call to OpenRouter"""
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/your-username/git-commit-tool",
-            "X-Title": "Git Commit Tool"
-        }
+        """Make API call to LLM provider"""
+        # Build headers from template
+        headers = {}
+        for key, template in self.provider.headers_template.items():
+            headers[key] = template.format(api_key=self.api_key)
         
+        # Format model name
+        model = self.provider.model_format.format(model=self.model)
+        
+        # Prepare request data
         data = {
-            "model": self.model,
+            "model": model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": 2000
         }
         
+        # Handle Anthropic's different API format
+        if self.provider_name == 'anthropic':
+            # Anthropic uses a different message format
+            system_message = None
+            user_messages = []
+            
+            for msg in messages:
+                if msg["role"] == "system":
+                    system_message = msg["content"]
+                else:
+                    user_messages.append(msg)
+            
+            data = {
+                "model": model,
+                "max_tokens": 2000,
+                "temperature": temperature,
+                "messages": user_messages
+            }
+            
+            if system_message:
+                data["system"] = system_message
+            
+            endpoint = f"{self.provider.base_url}/messages"
+        else:
+            endpoint = f"{self.provider.base_url}/chat/completions"
+        
         try:
-            response = requests.post(f"{self.base_url}/chat/completions", 
-                                   headers=headers, json=data, timeout=30)
+            response = requests.post(endpoint, headers=headers, json=data, timeout=30)
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            
+            result = response.json()
+            
+            # Handle different response formats
+            if self.provider_name == 'anthropic':
+                return result["content"][0]["text"]
+            else:
+                return result["choices"][0]["message"]["content"]
+                
         except Exception as e:
-            raise Exception(f"LLM API call failed: {e}")
+            raise Exception(f"LLM API call failed for {self.provider.name}: {e}")
     
     def get_modified_files(self) -> List[str]:
         """Get list of modified files in the repository"""
@@ -502,13 +668,123 @@ Provide patches to update this documentation."""
         
         return False
 
+def configure_tool():
+    """Interactive configuration setup"""
+    config = ConfigManager()
+    
+    print("🔧 Git Commit Tool Configuration")
+    print("=" * 40)
+    
+    # Show current configuration
+    current_provider = config.get('provider') or 'openrouter'
+    print(f"Current provider: {current_provider}")
+    
+    # Provider selection
+    providers = ProviderConfig.get_providers()
+    print("\nAvailable providers:")
+    for i, (key, provider) in enumerate(providers.items(), 1):
+        indicator = "→" if key == current_provider else " "
+        print(f"{indicator} {i}. {provider.name} ({key})")
+    
+    while True:
+        choice = input(f"\nSelect provider [1-{len(providers)}] or press Enter to keep current: ").strip()
+        if not choice:
+            provider_key = current_provider
+            break
+        try:
+            provider_key = list(providers.keys())[int(choice) - 1]
+            break
+        except (ValueError, IndexError):
+            print("Invalid choice. Please try again.")
+    
+    config.set('provider', provider_key)
+    provider = providers[provider_key]
+    
+    print(f"\n🔑 Configuring {provider.name}")
+    
+    # API Key configuration
+    current_api_key, current_model = config.get_provider_config(provider_key)
+    if current_api_key:
+        api_key_display = current_api_key[:8] + "..." + current_api_key[-4:] if len(current_api_key) > 12 else current_api_key
+        print(f"Current API key: {api_key_display}")
+    
+    new_api_key = input("Enter API key (or press Enter to keep current): ").strip()
+    if new_api_key:
+        config.set_provider_config(provider_key, api_key=new_api_key)
+    
+    # Model configuration
+    print(f"Current model: {current_model}")
+    
+    # Show some popular models for each provider
+    popular_models = {
+        'openrouter': [
+            'google/gemini-2.0-flash-exp',
+            'anthropic/claude-3-5-sonnet',
+            'openai/gpt-4o-mini',
+            'meta-llama/llama-3.2-3b-instruct'
+        ],
+        'openai': [
+            'gpt-4o',
+            'gpt-4o-mini', 
+            'gpt-3.5-turbo'
+        ],
+        'anthropic': [
+            'claude-3-5-sonnet-20241022',
+            'claude-3-5-haiku-20241022',
+            'claude-3-opus-20240229'
+        ],
+        'gemini': [
+            'gemini-2.0-flash-exp',
+            'gemini-1.5-pro',
+            'gemini-1.5-flash'
+        ]
+    }
+    
+    if provider_key in popular_models:
+        print("\nPopular models:")
+        for model in popular_models[provider_key]:
+            indicator = "→" if model == current_model else " "
+            print(f"{indicator} {model}")
+    
+    new_model = input("Enter model name (or press Enter to keep current): ").strip()
+    if new_model:
+        config.set_provider_config(provider_key, model=new_model)
+    
+    # Other settings
+    print("\n⚙️ General Settings")
+    
+    current_docs_dir = config.get('docs_dir') or 'docs'
+    print(f"Current docs directory: {current_docs_dir}")
+    new_docs_dir = input("Enter docs directory (or press Enter to keep current): ").strip()
+    if new_docs_dir:
+        config.set('docs_dir', new_docs_dir)
+    
+    # Default behavior
+    current_interactive = config.get('interactive', 'DEFAULT').lower() == 'true'
+    interactive_choice = input(f"Use interactive mode by default? [y/N]: ").strip().lower()
+    if interactive_choice in ['y', 'yes']:
+        config.set('interactive', 'true')
+    elif interactive_choice in ['n', 'no']:
+        config.set('interactive', 'false')
+    
+    # Save configuration
+    config.save_config()
+    print(f"\n✅ Configuration saved to {config.config_file}")
+    
+    # Test the configuration
+    test_config = input("\nTest the configuration? [y/N]: ").strip().lower()
+    if test_config in ['y', 'yes']:
+        try:
+            tool = GitCommitTool(config_manager=config)
+            print(f"✅ Successfully configured {tool.provider.name} with model {tool.model}")
+        except Exception as e:
+            print(f"❌ Configuration test failed: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Intelligent Git Commit Tool with LLM")
     parser.add_argument("--api-key", required=True, help="OpenRouter API key")
-    parser.add_argument("--model", default="anthropic/claude-3-sonnet",
+    parser.add_argument("--model", default="anthropic/claude-3-sonnet", 
                        help="Model to use (default: anthropic/claude-3-sonnet)")
-    parser.add_argument("--base-url", default="https://openrouter.ai/api/v1",
-                       help="Base URL for the OpenRouter API (default: https://openrouter.ai/api/v1)")
     parser.add_argument("--docs-dir", type=Path, help="Documentation directory to manage")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode for staging hunks")
@@ -521,12 +797,12 @@ def main():
     args = parser.parse_args()
     
     try:
-        tool = GitCommitTool(args.api_key, args.model, args.base_url)
+        tool = GitCommitTool(args.api_key, args.model)
         
         if args.docs_only and args.docs_dir:
             # Documentation management mode
             print("🔍 Analyzing project for documentation updates...")
-            suggestions = tool.suggest_doc_updates(args.docs_dir)
+            suggestions = tool.suggest_doc_updates(docs_dir)
             
             print("\n📋 Documentation Update Suggestions:")
             for update in suggestions.get('updates', []):
@@ -541,7 +817,7 @@ def main():
             
             # Interactive doc management
             for update in suggestions.get('updates', []):
-                filepath = args.docs_dir / update.get('file', '')
+                filepath = docs_dir / update.get('file', '')
                 action = update.get('action', 'update')
                 
                 choice = input(f"\nApply {action} to {filepath.name}? [y/n]: ").lower()
@@ -575,11 +851,11 @@ def main():
         
         print(f"📁 Modified files: {', '.join(modified_files)}")
         
-        if args.auto_stage:
+        if auto_stage:
             # Auto-stage all changes
             subprocess.run(["git", "add", "."], check=True)
             print("✅ Auto-staged all changes")
-        elif args.interactive:
+        elif interactive:
             # Interactive staging mode
             all_selected_hunks = []
             for filepath in modified_files:
@@ -672,6 +948,8 @@ def main():
     
     except Exception as e:
         print(f"❌ Error: {e}")
+        if "API key" in str(e):
+            print("💡 Tip: Run 'python git-commit-tool.py config' to set up your configuration")
         sys.exit(1)
 
 if __name__ == "__main__":

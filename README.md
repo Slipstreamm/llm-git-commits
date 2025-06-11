@@ -1,6 +1,6 @@
 # 🤖 Intelligent Git Commit Tool
 
-An AI-powered command-line tool that automatically generates meaningful commit messages and manages project documentation using Large Language Models (LLMs) via OpenRouter API.
+An AI-powered command-line tool that automatically generates meaningful commit messages and manages project documentation using Large Language Models (LLMs) from multiple providers including OpenRouter, OpenAI, Anthropic, and Google Gemini.-powered command-line tool that automatically generates meaningful commit messages and manages project documentation using Large Language Models (LLMs) via OpenRouter API.
 
 ## ✨ Features
 
@@ -239,13 +239,13 @@ Contributions are welcome! Here are some ways to help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/Slipstreamm/llm-git-commits.git
-cd llm-git-commits
+git clone https://github.com/your-username/git-commit-tool.git
+cd git-commit-tool
 
 # Install dependencies
 pip install requests
 
-# Run tests (if available)
+# Run tests (if you add them)
 python -m pytest tests/
 ```
 
