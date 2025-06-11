@@ -13,12 +13,12 @@ setup(
             'llm-git-commits=llm_git_commits.main:main',
         ],
     },
-    author='Your Name', # TODO: Replace with actual author name
-    author_email='your.email@example.com', # TODO: Replace with actual author email
+    author='Slipstream',
+    author_email='me@slipstreamm.dev',
     description='Intelligent Git Commit Tool with LLM Integration',
     long_description=open('README.md', encoding='utf-8').read(),
     long_description_content_type='text/markdown',
-    url='https://github.com/your-username/llm-git-commits', # TODO: Replace with actual GitHub URL
+    url='https://github.com/Slipstreamm/llm-git-commits',
     classifiers=[
         'Programming Language :: Python :: 3',
         'License :: OSI Approved :: MIT License',

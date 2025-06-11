@@ -29,15 +29,9 @@ An AI-powered command-line tool that automatically generates meaningful commit m
 
 ### Installation
 
-1. **Clone or download the script**:
+1. **Install from PyPI**:
    ```bash
-   wget https://raw.githubusercontent.com/your-repo/git-commit-tool.py
-   chmod +x git-commit-tool.py
-   ```
-
-2. **Install dependencies**:
-   ```bash
-   pip install requests
+   pip install llm-git-commits
    ```
 
 3. **Set up your API key**:
@@ -49,13 +43,13 @@ An AI-powered command-line tool that automatically generates meaningful commit m
 
 ```bash
 # Interactive mode - stage changes selectively
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY --interactive
+llm-git-commits --api-key $OPENROUTER_API_KEY --interactive
 
 # Auto-commit all changes
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY --auto-stage
+llm-git-commits --api-key $OPENROUTER_API_KEY --auto-stage
 
 # Manage documentation
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
+llm-git-commits --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
 ```
 
 ## 📖 Detailed Usage
@@ -76,7 +70,7 @@ python git-commit-tool.py --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs
 
 #### 1. Interactive Staging (Recommended)
 ```bash
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY -i
+llm-git-commits --api-key $OPENROUTER_API_KEY -i
 ```
 
 This mode lets you:
@@ -86,14 +80,14 @@ This mode lets you:
 
 #### 2. Quick Commit All Changes
 ```bash
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY -a
+llm-git-commits --api-key $OPENROUTER_API_KEY -a
 ```
 
 Perfect for when you want to commit all your changes with an AI-generated message.
 
 #### 3. Documentation Management
 ```bash
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
+llm-git-commits --api-key $OPENROUTER_API_KEY --docs-dir ./docs --docs-only
 ```
 
 The tool will:
@@ -104,7 +98,7 @@ The tool will:
 
 #### 4. Custom Model
 ```bash
-python git-commit-tool.py --api-key $OPENROUTER_API_KEY --model "openai/gpt-4-turbo" -i
+llm-git-commits --api-key $OPENROUTER_API_KEY --model "openai/gpt-4-turbo" -i
 ```
 
 ## 🛠️ How It Works
@@ -232,11 +226,11 @@ Contributions are welcome! Here are some ways to help:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/git-commit-tool.git
-cd git-commit-tool
+git clone https://github.com/Slipstreamm/llm-git-commits.git
+cd llm-git-commits
 
-# Install dependencies
-pip install requests
+# Install in editable mode
+pip install -e .
 
 # Run tests (if you add them)
 python -m pytest tests/
