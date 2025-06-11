@@ -530,10 +530,17 @@ Analyze the git diff and write a concise, informative commit message."""
         try:
             response_generator = self._call_llm(messages, stream=True)
             
+            # Stop the initial feedback before printing the streaming response
+            if feedback.start_time:
+                feedback.stop(f"✅ Generation started in {time.time() - feedback.start_time:.1f}s")
+            else:
+                feedback.stop("✅ Generation started.")
+
             commit_message = ""
             sys.stdout.write("\n📝 Proposed commit message:\n")
             sys.stdout.write("-" * 50 + "\n")
             
+            # Stream the commit message
             for chunk in response_generator:
                 commit_message += chunk
                 sys.stdout.write(chunk)
@@ -541,10 +548,7 @@ Analyze the git diff and write a concise, informative commit message."""
                 
             sys.stdout.write("\n" + "-" * 50 + "\n")
             
-            if feedback.start_time:
-                feedback.stop(f"✅ Generation complete in {time.time() - feedback.start_time:.1f}s")
-            else:
-                feedback.stop("✅ Generation complete.")
+            print("✅ Generation complete.")
             return commit_message.strip()
             
         except Exception as e:
