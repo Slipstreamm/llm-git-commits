@@ -745,6 +745,98 @@ Provide patches to update this documentation."""
         
         return False
 
+def select_model_interactively(provider_config: ProviderConfig, api_key: str) -> Optional[str]:
+    """Fetch models and let the user select one interactively."""
+    headers = {}
+    for key, template in provider_config.headers_template.items():
+        headers[key] = template.format(api_key=api_key)
+    
+    endpoint = f"{provider_config.base_url}/models"
+    models = []
+    print("\n⏳ Fetching available models...")
+    try:
+        response = requests.get(endpoint, headers=headers, timeout=15)
+        if response.status_code == 200:
+            json_response = response.json()
+            if isinstance(json_response, dict):
+                models_data = json_response.get('data', [])
+            elif isinstance(json_response, list):
+                models_data = json_response
+            else:
+                models_data = []
+            models = sorted(models_data, key=lambda x: x.get('name', '').lower())
+        else:
+            print(f"⚠️ Failed to fetch models (status: {response.status_code}). Response: {response.text}")
+            return None
+    except Exception as e:
+        print(f"⚠️ Could not fetch models: {e}.")
+        return None
+
+    if not models:
+        print("No models found.")
+        return None
+
+    print(f"✅ Found {len(models)} models for {provider_config.name}.")
+    
+    all_models = models
+    while True:  # Search loop
+        search_term = input("\n🔍 Search for a model (or press Enter to list all): ").strip().lower()
+        if search_term:
+            filtered_models = [
+                m for m in all_models
+                if search_term in m.get('id', '').lower()
+                or search_term in m.get('name', '').lower()
+                or (m.get('description') and search_term in m.get('description').lower())
+            ]
+        else:
+            filtered_models = all_models
+
+        if not filtered_models:
+            print("No models found matching your search.")
+            continue  # Restart search loop
+
+        start_index = 0
+        page_size = 25
+        while True:  # Display and select loop
+            print("\n--- Matching Models ---")
+            end_index = min(start_index + page_size, len(filtered_models))
+            
+            for i, model in enumerate(filtered_models[start_index:end_index], start=start_index):
+                model_id = model.get('id', 'N/A')
+                name = model.get('name', 'N/A')
+                context = model.get('context_length', 'N/A')
+                print(f"{i+1:3d}. {name:<40} ({model_id}) - Context: {context}")
+            
+            prompt = f"Select a model #, (s)earch again, or (q)uit"
+            if end_index < len(filtered_models):
+                prompt += ", (m)ore"
+
+            choice = input(f"{prompt}: ").strip().lower()
+
+            if choice == 's':
+                break
+            if choice == 'q' or choice == '':
+                return None
+            if choice == 'm' and end_index < len(filtered_models):
+                start_index = end_index
+                continue
+            
+            try:
+                model_index = int(choice) - 1
+                if 0 <= model_index < len(filtered_models):
+                    selected_model_id = filtered_models[model_index]['id']
+                    print(f"✅ Selected model: {selected_model_id}")
+                    return selected_model_id
+                else:
+                    print("Invalid number.")
+            except ValueError:
+                print("Invalid input.")
+        
+        if choice == 's':
+            continue
+        else:
+            return None
+
 def configure_tool():
     """Interactive configuration setup"""
     config = ConfigManager()
@@ -792,40 +884,28 @@ def configure_tool():
     # Model configuration
     print(f"Current model: {current_model}")
     
-    # Show some popular models for each provider
-    popular_models = {
-        'openrouter': [
-            'google/gemini-2.0-flash-exp',
-            'anthropic/claude-3-5-sonnet',
-            'openai/gpt-4o-mini',
-            'meta-llama/llama-3.2-3b-instruct'
-        ],
-        'openai': [
-            'gpt-4o',
-            'gpt-4o-mini', 
-            'gpt-3.5-turbo'
-        ],
-        'anthropic': [
-            'claude-3-5-sonnet-20241022',
-            'claude-3-5-haiku-20241022',
-            'claude-3-opus-20240229'
-        ],
-        'gemini': [
-            'gemini-2.0-flash-exp',
-            'gemini-1.5-pro',
-            'gemini-1.5-flash'
-        ]
-    }
+    api_key_to_use = new_api_key or current_api_key
     
-    if provider_key in popular_models:
-        print("\nPopular models:")
-        for model in popular_models[provider_key]:
-            indicator = "→" if model == current_model else " "
-            print(f"{indicator} {model}")
-    
-    new_model = input("Enter model name (or press Enter to keep current): ").strip()
-    if new_model:
-        config.set_provider_config(provider_key, model=new_model)
+    if api_key_to_use:
+        choice = input("\nFetch and select from available models? [Y/n]: ").strip().lower()
+        if choice in ('', 'y', 'yes'):
+            selected_model = select_model_interactively(provider, api_key_to_use)
+            if selected_model:
+                config.set_provider_config(provider_key, model=selected_model)
+            else:
+                print("Model selection cancelled.")
+                new_model = input("Enter model name manually (or press Enter to keep current): ").strip()
+                if new_model:
+                    config.set_provider_config(provider_key, model=new_model)
+        else:
+            new_model = input("Enter model name (or press Enter to keep current): ").strip()
+            if new_model:
+                config.set_provider_config(provider_key, model=new_model)
+    else:
+        print("\n⚠️ API key not set. Please enter model name manually.")
+        new_model = input(f"Enter model name for {provider.name} (or press Enter to keep '{current_model}'): ").strip()
+        if new_model:
+            config.set_provider_config(provider_key, model=new_model)
     
     # Other settings
     print("\n⚙️ General Settings")
