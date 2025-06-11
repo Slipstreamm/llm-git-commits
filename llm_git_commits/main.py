@@ -140,7 +140,7 @@ class ConfigManager:
         model = self.config.get(section, 'model', fallback=self._get_default_model(provider))
         return api_key, model
     
-    def set_provider_config(self, provider: str, api_key: str = None, model: str = None):
+    def set_provider_config(self, provider: str, api_key: Optional[str] = None, model: Optional[str] = None):
         """Set provider configuration"""
         section = f'provider.{provider}'
         if section not in self.config:
@@ -152,10 +152,11 @@ class ConfigManager:
             self.config[section]['model'] = model
 
 class GitCommitTool:
-    def __init__(self, api_key: str, model: str = "anthropic/claude-3-sonnet", base_url: str = "https://openrouter.ai/api/v1"):
-        self.api_key = api_key
-        self.model = model
-        self.base_url = base_url
+    def __init__(self, config_manager: ConfigManager):
+        self.config = config_manager
+        self.provider_name = self.config.get('provider')
+        self.provider = ProviderConfig.get_providers()[self.provider_name]
+        self.api_key, self.model = self.config.get_provider_config(self.provider_name)
         self.repo_root = self._get_repo_root()
         
     def _get_repo_root(self) -> Path:
@@ -775,16 +776,13 @@ def configure_tool():
     test_config = input("\nTest the configuration? [y/N]: ").strip().lower()
     if test_config in ['y', 'yes']:
         try:
-            tool = GitCommitTool(config_manager=config)
+            tool = GitCommitTool(config)
             print(f"✅ Successfully configured {tool.provider.name} with model {tool.model}")
         except Exception as e:
             print(f"❌ Configuration test failed: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Intelligent Git Commit Tool with LLM")
-    parser.add_argument("--api-key", required=True, help="OpenRouter API key")
-    parser.add_argument("--model", default="anthropic/claude-3-sonnet", 
-                       help="Model to use (default: anthropic/claude-3-sonnet)")
     parser.add_argument("--docs-dir", type=Path, help="Documentation directory to manage")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode for staging hunks")
@@ -797,12 +795,13 @@ def main():
     args = parser.parse_args()
     
     try:
-        tool = GitCommitTool(args.api_key, args.model)
+        config = ConfigManager()
+        tool = GitCommitTool(config)
         
         if args.docs_only and args.docs_dir:
             # Documentation management mode
             print("🔍 Analyzing project for documentation updates...")
-            suggestions = tool.suggest_doc_updates(docs_dir)
+            suggestions = tool.suggest_doc_updates(args.docs_dir)
             
             print("\n📋 Documentation Update Suggestions:")
             for update in suggestions.get('updates', []):
@@ -817,7 +816,7 @@ def main():
             
             # Interactive doc management
             for update in suggestions.get('updates', []):
-                filepath = docs_dir / update.get('file', '')
+                filepath = args.docs_dir / update.get('file', '')
                 action = update.get('action', 'update')
                 
                 choice = input(f"\nApply {action} to {filepath.name}? [y/n]: ").lower()
@@ -851,11 +850,11 @@ def main():
         
         print(f"📁 Modified files: {', '.join(modified_files)}")
         
-        if auto_stage:
+        if args.auto_stage:
             # Auto-stage all changes
             subprocess.run(["git", "add", "."], check=True)
             print("✅ Auto-staged all changes")
-        elif interactive:
+        elif args.interactive:
             # Interactive staging mode
             all_selected_hunks = []
             for filepath in modified_files:
