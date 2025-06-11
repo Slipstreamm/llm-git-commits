@@ -506,12 +506,11 @@ class GitCommitTool:
         return True
     
     def generate_commit_message(self, staged_diff: str) -> str:
-        """Generate a commit message based on staged changes"""
+        """Generate a commit message based on staged changes, with streaming."""
         messages = [
             {
                 "role": "system",
-                "content": """You are an expert software developer who writes excellent git commit messages. 
-                
+                "content": """You are an expert software developer who writes excellent git commit messages.
 Guidelines for commit messages:
 - Use conventional commits format: type(scope): description
 - Types: feat, fix, docs, style, refactor, test, chore, build, ci, perf
@@ -520,16 +519,40 @@ Guidelines for commit messages:
 - Be specific and descriptive
 - If there are multiple changes, focus on the most significant one
 - Add a body if needed to explain WHY the change was made
-
 Analyze the git diff and write a concise, informative commit message."""
             },
             {
-                "role": "user", 
+                "role": "user",
                 "content": f"Generate a commit message for these changes:\n\n```diff\n{staged_diff}\n```"
             }
         ]
         
-        return self._call_llm(messages).strip()
+        feedback = LLMFeedback("🤖 Generating commit message...")
+        feedback.start()
+        
+        try:
+            response_generator = self._call_llm(messages, stream=True)
+            
+            commit_message = ""
+            sys.stdout.write("\n📝 Proposed commit message:\n")
+            sys.stdout.write("-" * 50 + "\n")
+            
+            for chunk in response_generator:
+                commit_message += chunk
+                sys.stdout.write(chunk)
+                sys.stdout.flush()
+                
+            sys.stdout.write("\n" + "-" * 50 + "\n")
+            
+            if feedback.start_time:
+                feedback.stop(f"✅ Generation complete in {time.time() - feedback.start_time:.1f}s")
+            else:
+                feedback.stop("✅ Generation complete.")
+            return commit_message.strip()
+            
+        except Exception as e:
+            feedback.stop("❌ Error during generation.")
+            raise e
     
     def get_staged_diff(self) -> str:
         """Get the diff of staged changes"""
@@ -1249,13 +1272,7 @@ def main():
         if args.commit_message:
             commit_message = args.commit_message
         else:
-            print("🤖 Generating commit message...")
             commit_message = tool.generate_commit_message(staged_diff)
-        
-        print(f"\n📝 Proposed commit message:")
-        print("-" * 50)
-        print(commit_message)
-        print("-" * 50)
         
         # Confirm commit
         confirm = input("\nProceed with commit? [Y/n]: ").lower()
