@@ -249,7 +249,7 @@ class GitCommitTool:
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 2000
+            "max_tokens": 32768
         }
         
         # Handle Anthropic's different API format
@@ -266,7 +266,7 @@ class GitCommitTool:
             
             data = {
                 "model": model,
-                "max_tokens": 2000,
+                "max_tokens": 32768,
                 "temperature": temperature,
                 "messages": user_messages
             }
@@ -279,7 +279,7 @@ class GitCommitTool:
             endpoint = f"{self.provider.base_url}/chat/completions"
         
         try:
-            response = requests.post(endpoint, headers=headers, json=data, timeout=30)
+            response = requests.post(endpoint, headers=headers, json=data, timeout=120)
             response.raise_for_status()
             
             result = response.json()
@@ -288,6 +288,7 @@ class GitCommitTool:
             if self.provider_name == 'anthropic':
                 return result["content"][0]["text"]
             else:
+                # print(result)
                 return result["choices"][0]["message"]["content"]
                 
         except Exception as e:
