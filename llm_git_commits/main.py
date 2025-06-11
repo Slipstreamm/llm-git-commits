@@ -207,40 +207,22 @@ class IntelligentStager:
 
     def plan_commits(self, hunks: List[Dict]) -> Dict:
         """
-        Analyze hunks and create a plan for multiple commits using an LLM.
+        Analyze hunks and create a plan for multiple commits using an LLM,
+        with real-time feedback.
         """
         strategy = self.config.get('intelligent_grouping_strategy')
         
-        # Prepare hunks for the prompt, removing content to save tokens
-        hunks_for_prompt = []
-        for hunk in hunks:
-            hunks_for_prompt.append({
-                "id": hunk['id'],
-                "filepath": hunk['filepath'],
-                "header": hunk['header'],
-                "content": hunk['content']
-            })
+        hunks_for_prompt = [{"id": h['id'], "filepath": h['filepath'], "header": h['header'], "content": h['content']} for h in hunks]
 
         messages = [
             {
                 "role": "system",
                 "content": f"""You are an expert at analyzing code changes and creating a logical series of git commits.
 Your task is to group the provided hunks into separate, focused commits.
-
-You must return a JSON object with two keys:
-1. "commit_plan": A list of planned commits.
-2. "unplanned_hunk_ids": A list of IDs for hunks that do not fit into any logical commit.
-
-Each commit in the "commit_plan" list must be a JSON object with:
-- "commit_message": A conventional commit message (e.g., "feat(parser): Add new parsing logic").
-- "hunk_ids": A list of hunk IDs that belong to this commit.
-
+You must return a JSON object with two keys: "commit_plan" (a list of planned commits) and "unplanned_hunk_ids" (a list of IDs for hunks that do not fit).
+Each commit in "commit_plan" must have "commit_message" and "hunk_ids".
 Grouping Strategy: {strategy}
-- If 'auto', use your best judgment to create logical commits.
-- If 'feature', group hunks related to the same feature or bug fix.
-- If 'file', group hunks by their file path.
-
-Analyze the hunks and create a clear, logical commit plan. Ensure every hunk ID is either in a commit or in the "unplanned_hunk_ids" list.
+Analyze the hunks and create a clear, logical commit plan. Ensure every hunk ID is either in a commit or in "unplanned_hunk_ids".
 """
             },
             {
@@ -249,18 +231,33 @@ Analyze the hunks and create a clear, logical commit plan. Ensure every hunk ID 
             }
         ]
 
-        response_text = self.tool._call_llm(messages, temperature=0.2)
+        feedback = LLMFeedback("🧠 Analyzing changes for commit plan...")
+        feedback.start()
+        
+        full_response_str = ""
         
         try:
-            # Clean the response to ensure it's valid JSON
-            match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            # Stream the response to get the full text, showing feedback while doing so
+            response_generator = self.tool._call_llm(messages, temperature=0.2, stream=True)
+            for chunk in response_generator:
+                full_response_str += chunk
+
+            if feedback.start_time:
+                feedback.stop(f"✅ Analysis complete in {time.time() - feedback.start_time:.1f}s")
+            else:
+                feedback.stop("✅ Analysis complete.")
+            
+            # Robustly extract JSON from the potentially messy LLM output
+            match = re.search(r'\{.*\}', full_response_str, re.DOTALL)
             if match:
                 json_str = match.group(0)
                 return json.loads(json_str)
             else:
                 raise ValueError("No JSON object found in LLM response")
-        except (json.JSONDecodeError, AttributeError, ValueError):
-            print("⚠️ Could not parse LLM response for commit plan.")
+
+        except Exception as e:
+            feedback.stop("❌ Error during analysis.")
+            print(f"⚠️ Could not parse LLM response for commit plan: {e}")
             return {"commit_plan": [], "unplanned_hunk_ids": [h['id'] for h in hunks]}
 class GitCommitTool:
     def __init__(self, config_manager: ConfigManager):
