@@ -151,6 +151,68 @@ class ConfigManager:
         if model is not None:
             self.config[section]['model'] = model
 
+class IntelligentStager:
+    def __init__(self, tool: 'GitCommitTool'):
+        self.tool = tool
+        self.config = tool.config
+
+    def plan_commits(self, hunks: List[Dict]) -> Dict:
+        """
+        Analyze hunks and create a plan for multiple commits using an LLM.
+        """
+        strategy = self.config.get('intelligent_grouping_strategy')
+        
+        # Prepare hunks for the prompt, removing content to save tokens
+        hunks_for_prompt = []
+        for hunk in hunks:
+            hunks_for_prompt.append({
+                "id": hunk['id'],
+                "filepath": hunk['filepath'],
+                "header": hunk['header'],
+                "content": hunk['content']
+            })
+
+        messages = [
+            {
+                "role": "system",
+                "content": f"""You are an expert at analyzing code changes and creating a logical series of git commits.
+Your task is to group the provided hunks into separate, focused commits.
+
+You must return a JSON object with two keys:
+1. "commit_plan": A list of planned commits.
+2. "unplanned_hunk_ids": A list of IDs for hunks that do not fit into any logical commit.
+
+Each commit in the "commit_plan" list must be a JSON object with:
+- "commit_message": A conventional commit message (e.g., "feat(parser): Add new parsing logic").
+- "hunk_ids": A list of hunk IDs that belong to this commit.
+
+Grouping Strategy: {strategy}
+- If 'auto', use your best judgment to create logical commits.
+- If 'feature', group hunks related to the same feature or bug fix.
+- If 'file', group hunks by their file path.
+
+Analyze the hunks and create a clear, logical commit plan. Ensure every hunk ID is either in a commit or in the "unplanned_hunk_ids" list.
+"""
+            },
+            {
+                "role": "user",
+                "content": f"Here are the hunks to analyze:\n\n{json.dumps(hunks_for_prompt, indent=2)}"
+            }
+        ]
+
+        response_text = self.tool._call_llm(messages, temperature=0.2)
+        
+        try:
+            # Clean the response to ensure it's valid JSON
+            match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            if match:
+                json_str = match.group(0)
+                return json.loads(json_str)
+            else:
+                raise ValueError("No JSON object found in LLM response")
+        except (json.JSONDecodeError, AttributeError, ValueError):
+            print("⚠️ Could not parse LLM response for commit plan.")
+            return {"commit_plan": [], "unplanned_hunk_ids": [h['id'] for h in hunks]}
 class GitCommitTool:
     def __init__(self, config_manager: ConfigManager):
         self.config = config_manager
@@ -402,20 +464,32 @@ Analyze the git diff and write a concise, informative commit message."""
         """Get the diff of staged changes"""
         result = subprocess.run(
             ["git", "diff", "--staged"],
-            capture_output=True, text=True
+            capture_output=True, text=True, encoding='utf-8'
         )
         return result.stdout
-    
+
+    def get_all_hunks(self) -> List[Dict]:
+        """Get all hunks from all modified files"""
+        all_hunks = []
+        modified_files = self.get_modified_files()
+        for filepath in modified_files:
+            hunks = self.get_file_hunks(filepath)
+            # Add a unique ID to each hunk for tracking
+            for i, hunk in enumerate(hunks):
+                hunk['id'] = f"{filepath}-{i}"
+            all_hunks.extend(hunks)
+        return all_hunks
+
     def commit_staged_changes(self, message: str) -> bool:
         """Commit the staged changes"""
         try:
-            subprocess.run(["git", "commit", "-m", message], check=True)
+            subprocess.run(["git", "commit", "-m", message], check=True, encoding='utf-8')
             print(f"✅ Committed: {message}")
             return True
         except subprocess.CalledProcessError:
             print("❌ Failed to commit changes")
             return False
-    
+
     def find_doc_files(self, docs_dir: Path) -> List[Path]:
         """Find documentation files in the docs directory"""
         if not docs_dir.exists():
@@ -782,12 +856,18 @@ def configure_tool():
             print(f"❌ Configuration test failed: {e}")
 
 def main():
+    if 'config' in sys.argv:
+        configure_tool()
+        return
+    
     parser = argparse.ArgumentParser(description="Intelligent Git Commit Tool with LLM")
     parser.add_argument("--docs-dir", type=Path, help="Documentation directory to manage")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode for staging hunks")
     parser.add_argument("--auto-stage", "-a", action="store_true",
                        help="Automatically stage all changes")
+    parser.add_argument("--intelligent", action="store_true",
+                        help="Use LLM to automatically create multiple focused commits")
     parser.add_argument("--docs-only", action="store_true",
                        help="Only work on documentation updates")
     parser.add_argument("--commit-message", "-m", help="Override generated commit message")
@@ -850,9 +930,70 @@ def main():
         
         print(f"📁 Modified files: {', '.join(modified_files)}")
         
-        if args.auto_stage:
+        if args.intelligent:
+            # Intelligent staging mode
+            print("🧠 Starting intelligent staging...")
+            stager = IntelligentStager(tool)
+            all_hunks = tool.get_all_hunks()
+            
+            if not all_hunks:
+                print("✨ No changes to process!")
+                return
+
+            commit_plan_data = stager.plan_commits(all_hunks)
+            commit_plan = commit_plan_data.get('commit_plan', [])
+            unplanned_hunk_ids = commit_plan_data.get('unplanned_hunk_ids', [])
+
+            if not commit_plan:
+                print("ℹ️ LLM did not propose any commits. You can stage changes manually.")
+                return
+
+            print(f"\n🤖 LLM has proposed {len(commit_plan)} commit(s).")
+            
+            # Create a map of hunk IDs to hunks for easy lookup
+            hunk_map = {h['id']: h for h in all_hunks}
+
+            # Execute the commit plan
+            for i, commit in enumerate(commit_plan):
+                print("-" * 50)
+                print(f"Commit {i+1}/{len(commit_plan)}:")
+                print(commit['commit_message'])
+                print(f"Hunks: {', '.join(commit['hunk_ids'])}")
+                
+                commit_hunks = [hunk_map[h_id] for h_id in commit['hunk_ids'] if h_id in hunk_map]
+                
+                if config.get('commit_flow') != 'automatic':
+                    confirm = input("Proceed with this commit? [Y/n]: ").lower()
+                    if confirm not in ('', 'y', 'yes'):
+                        print("❌ Commit skipped.")
+                        continue
+                
+                if tool.stage_hunks(commit_hunks):
+                    tool.commit_staged_changes(commit['commit_message'])
+                else:
+                    print("❌ Failed to stage hunks for this commit.")
+
+            # Handle unplanned hunks
+            if unplanned_hunk_ids:
+                print("-" * 50)
+                print(f"ℹ️ {len(unplanned_hunk_ids)} hunk(s) were not included in the commit plan.")
+                choice = input("Stage and commit remaining hunks in a separate commit? [y/N]: ").lower()
+                if choice == 'y':
+                    remaining_hunks = [hunk_map[h_id] for h_id in unplanned_hunk_ids if h_id in hunk_map]
+                    if tool.stage_hunks(remaining_hunks):
+                        staged_diff = tool.get_staged_diff()
+                        message = tool.generate_commit_message(staged_diff)
+                        print(f"\n📝 Proposed commit for remaining changes:")
+                        print(message)
+                        confirm = input("Proceed with commit? [Y/n]: ").lower()
+                        if confirm in ('', 'y', 'yes'):
+                            tool.commit_staged_changes(message)
+            
+            return # End of intelligent staging workflow
+
+        elif args.auto_stage:
             # Auto-stage all changes
-            subprocess.run(["git", "add", "."], check=True)
+            subprocess.run(["git", "add", "."], check=True, encoding='utf-8')
             print("✅ Auto-staged all changes")
         elif args.interactive:
             # Interactive staging mode
