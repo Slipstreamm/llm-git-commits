@@ -235,8 +235,8 @@ class GitCommitTool:
         except subprocess.CalledProcessError:
             raise Exception("Not in a git repository")
     
-    def _call_llm(self, messages: List[Dict], temperature: float = 0.3) -> str:
-        """Make API call to LLM provider"""
+    def _call_llm(self, messages: List[Dict], temperature: float = 0.3, stream: bool = False):
+        """Make API call to LLM provider. Returns a string or a generator."""
         # Build headers from template
         headers = {}
         for key, template in self.provider.headers_template.items():
@@ -250,7 +250,8 @@ class GitCommitTool:
             "model": model,
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": 32768
+            "max_tokens": 32768,
+            "stream": stream
         }
         
         # Handle Anthropic's different API format
@@ -269,7 +270,8 @@ class GitCommitTool:
                 "model": model,
                 "max_tokens": 32768,
                 "temperature": temperature,
-                "messages": user_messages
+                "messages": user_messages,
+                "stream": stream
             }
             
             if system_message:
@@ -280,20 +282,39 @@ class GitCommitTool:
             endpoint = f"{self.provider.base_url}/chat/completions"
         
         try:
-            response = requests.post(endpoint, headers=headers, json=data, timeout=120)
+            response = requests.post(endpoint, headers=headers, json=data, timeout=300, stream=stream)
             response.raise_for_status()
             
-            result = response.json()
-            
-            # Handle different response formats
-            if self.provider_name == 'anthropic':
-                return result["content"][0]["text"]
+            if not stream:
+                result = response.json()
+                if self.provider_name == 'anthropic':
+                    return result["content"][0]["text"]
+                else:
+                    return result["choices"][0]["message"]["content"]
             else:
-                # print(result)
-                return result["choices"][0]["message"]["content"]
+                return self._stream_response_generator(response)
                 
         except Exception as e:
             raise Exception(f"LLM API call failed for {self.provider.name}: {e}")
+
+    def _stream_response_generator(self, response: requests.Response):
+        """Generator for handling streaming responses from OpenAI-compatible APIs."""
+        for chunk in response.iter_lines():
+            if chunk:
+                chunk_str = chunk.decode('utf-8')
+                if chunk_str.startswith('data: '):
+                    chunk_str = chunk_str[6:]
+                if chunk_str == '[DONE]':
+                    break
+                
+                try:
+                    data = json.loads(chunk_str)
+                    if 'choices' in data and data['choices']:
+                        delta = data['choices'][0].get('delta', {})
+                        if 'content' in delta and delta['content']:
+                            yield delta['content']
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    continue # Ignore malformed chunks
     
     def get_modified_files(self) -> List[str]:
         """Get list of modified files in the repository"""
