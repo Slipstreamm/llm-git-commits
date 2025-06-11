@@ -641,9 +641,8 @@ Documentation directory: {docs_dir}
         project_analysis = self.analyze_project_for_docs(docs_dir)
         existing_docs = self.find_doc_files(docs_dir)
         
-        # Read existing docs content (first 1000 chars of each)
         docs_content = {}
-        for doc_file in existing_docs[:5]:  # Limit to first 5 docs
+        for doc_file in existing_docs[:5]:
             try:
                 with open(doc_file, 'r', encoding='utf-8') as f:
                     docs_content[str(doc_file.relative_to(self.repo_root))] = f.read()[:1000]
@@ -653,50 +652,29 @@ Documentation directory: {docs_dir}
         messages = [
             {
                 "role": "system",
-                "content": """You are a technical documentation expert. Analyze the project and suggest documentation updates.
-
-Return your response as a JSON object with this structure:
-{
-    "updates": [
-        {
-            "file": "path/to/file.md",
-            "action": "create|update|delete",
-            "reason": "Why this change is needed",
-            "priority": "high|medium|low"
-        }
-    ],
-    "suggestions": [
-        {
-            "type": "content",
-            "description": "What specific content should be added/updated"
-        }
-    ]
-}
-
-Focus on:
-- API documentation
-- Installation/setup guides
-- Usage examples
-- Architecture documentation
-- Changelog updates
-"""
+                "content": "You are a technical documentation expert. Analyze the project and suggest documentation updates as a JSON object."
             },
             {
                 "role": "user",
-                "content": f"""Project analysis:
-{project_analysis}
-
-Existing documentation:
-{json.dumps(docs_content, indent=2)}
-
-Suggest documentation updates needed based on recent changes."""
+                "content": f"Project analysis:\n{project_analysis}\n\nExisting documentation:\n{json.dumps(docs_content, indent=2)}\n\nSuggest documentation updates needed based on recent changes."
             }
         ]
         
-        response = self._call_llm(messages)
+        feedback = LLMFeedback("📄 Analyzing documentation...")
+        feedback.start()
         try:
-            return json.loads(response)
-        except json.JSONDecodeError:
+            response = self._call_llm(messages, stream=False)
+            if feedback.start_time:
+                feedback.stop(f"✅ Doc analysis complete in {time.time() - feedback.start_time:.1f}s")
+            else:
+                feedback.stop("✅ Doc analysis complete.")
+            if isinstance(response, str):
+                return json.loads(response)
+            else:
+                # This case should not happen with stream=False
+                raise TypeError("Expected a string response for doc analysis.")
+        except (json.JSONDecodeError, TypeError):
+            feedback.stop("❌ Error analyzing docs.")
             print("⚠️ Could not parse LLM response as JSON")
             return {"updates": [], "suggestions": []}
 
@@ -707,23 +685,29 @@ Suggest documentation updates needed based on recent changes."""
         messages = [
             {
                 "role": "system",
-                "content": f"""You are a technical writer creating {content_type} documentation.
-Write clear, comprehensive documentation that follows best practices.
-Use markdown format with appropriate headings, code blocks, and examples."""
+                "content": f"You are a technical writer creating {content_type} documentation. Use markdown format."
             },
             {
                 "role": "user",
-                "content": f"""Create documentation for: {filepath.name}
-Content type: {content_type}
-
-Project context:
-{project_analysis}
-
-Write comprehensive documentation that would be helpful for users/developers."""
+                "content": f"Create documentation for: {filepath.name}\nContent type: {content_type}\n\nProject context:\n{project_analysis}\n\nWrite comprehensive documentation."
             }
         ]
         
-        return self._call_llm(messages)
+        feedback = LLMFeedback(f"✍️ Creating {filepath.name}...")
+        feedback.start()
+        try:
+            response = self._call_llm(messages, stream=False)
+            if feedback.start_time:
+                feedback.stop(f"✅ Created doc in {time.time() - feedback.start_time:.1f}s")
+            else:
+                feedback.stop("✅ Doc creation complete.")
+            if isinstance(response, str):
+                return response
+            else:
+                raise TypeError("Expected a string response for doc creation.")
+        except Exception as e:
+            feedback.stop("❌ Error creating doc.")
+            raise e
 
     def update_doc_file(self, filepath: Path, update_instructions: str) -> str:
         """Update an existing documentation file"""
@@ -736,32 +720,29 @@ Write comprehensive documentation that would be helpful for users/developers."""
         messages = [
             {
                 "role": "system",
-                "content": """You are a technical writer updating documentation.
-Provide updates in a simple patch format:
-
-PATCH_START
-SECTION: [section name or line numbers]
-ACTION: [REPLACE|INSERT_AFTER|INSERT_BEFORE|DELETE]
-CONTENT:
-[new content here]
-PATCH_END
-
-You can provide multiple patches. Be precise with section identification."""
+                "content": "You are a technical writer updating documentation. Provide updates in a simple patch format (use PATCH_START, SECTION, ACTION, CONTENT, PATCH_END)."
             },
             {
                 "role": "user",
-                "content": f"""Current file content:
-```
-{current_content}
-```
-
-Update instructions: {update_instructions}
-
-Provide patches to update this documentation."""
+                "content": f"Current file content:\n```\n{current_content}\n```\n\nUpdate instructions: {update_instructions}\n\nProvide patches to update this documentation."
             }
         ]
         
-        return self._call_llm(messages)
+        feedback = LLMFeedback(f"✍️ Updating {filepath.name}...")
+        feedback.start()
+        try:
+            response = self._call_llm(messages, stream=False)
+            if feedback.start_time:
+                feedback.stop(f"✅ Updated doc in {time.time() - feedback.start_time:.1f}s")
+            else:
+                feedback.stop("✅ Doc update complete.")
+            if isinstance(response, str):
+                return response
+            else:
+                raise TypeError("Expected a string response for doc update.")
+        except Exception as e:
+            feedback.stop("❌ Error updating doc.")
+            raise e
 
     def apply_doc_patches(self, filepath: Path, patches_text: str) -> bool:
         """Apply simple patches to a documentation file"""
