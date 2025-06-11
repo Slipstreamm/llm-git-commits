@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import traceback
 from typing import Dict, List, Optional, Tuple
 import tempfile
 import difflib
@@ -112,17 +113,17 @@ class ConfigManager:
     def _get_default_model(self, provider: str) -> str:
         """Get default model for each provider"""
         defaults = {
-            'openrouter': 'google/gemini-2.0-flash-exp',
+            'openrouter': 'google/gemini-2.5-flash-preview-05-20',
             'openai': 'gpt-4o-mini',
-            'anthropic': 'claude-3-5-sonnet-20241022',
-            'gemini': 'gemini-2.0-flash-exp'
+            'anthropic': 'claude-sonnet-4-20250514',
+            'gemini': 'gemini-2.5-flash-preview-05-20'
         }
-        return defaults.get(provider, 'gpt-3.5-turbo')
+        return defaults.get(provider, 'gpt-4o-mini')
     
     def save_config(self):
         """Save configuration to file"""
         self.config_dir.mkdir(parents=True, exist_ok=True)
-        with open(self.config_file, 'w') as f:
+        with open(self.config_file, 'w', encoding='utf-8') as f:
             self.config.write(f)
     
     def get(self, key: str, section: str = 'DEFAULT') -> str:
@@ -228,7 +229,7 @@ class GitCommitTool:
         try:
             result = subprocess.run(
                 ["git", "rev-parse", "--show-toplevel"],
-                capture_output=True, text=True, check=True
+                capture_output=True, text=True, check=True, encoding='utf-8'
             )
             return Path(result.stdout.strip())
         except subprocess.CalledProcessError:
@@ -298,7 +299,7 @@ class GitCommitTool:
         """Get list of modified files in the repository"""
         result = subprocess.run(
             ["git", "diff", "--name-only", "HEAD"],
-            capture_output=True, text=True
+            capture_output=True, text=True, encoding='utf-8'
         )
         return [f for f in result.stdout.strip().split('\n') if f]
     
@@ -306,7 +307,7 @@ class GitCommitTool:
         """Get diff for a specific file"""
         result = subprocess.run(
             ["git", "diff", "HEAD", "--", filepath],
-            capture_output=True, text=True
+            capture_output=True, text=True, encoding='utf-8'
         )
         return result.stdout
     
@@ -419,18 +420,18 @@ class GitCommitTool:
                 patch_content += hunk['content'] + '\n'
             
             # Apply the patch to the index
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False) as f:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.patch', delete=False, encoding='utf-8') as f:
                 f.write(patch_content)
                 patch_file = f.name
             
             try:
                 subprocess.run(
-                    ["git", "apply", "--cached", patch_file],
-                    check=True, capture_output=True
+                    ["git", "apply", "--cached", "--ignore-whitespace", patch_file],
+                    check=True, capture_output=True, encoding='utf-8'
                 )
                 print(f"✅ Staged changes for {filepath}")
             except subprocess.CalledProcessError as e:
-                print(f"❌ Failed to stage {filepath}: {e.stderr.decode()}")
+                print(f"❌ Failed to stage {filepath}: {e.stderr}")
                 return False
             finally:
                 os.unlink(patch_file)
@@ -506,13 +507,13 @@ Analyze the git diff and write a concise, informative commit message."""
                 doc_files.append(file_path)
         
         return doc_files
-    
+
     def analyze_project_for_docs(self, docs_dir: Path) -> str:
         """Analyze the project to understand what documentation might be needed"""
         # Get recent commits
         result = subprocess.run(
             ["git", "log", "--oneline", "-10"],
-            capture_output=True, text=True
+            capture_output=True, text=True, encoding='utf-8'
         )
         recent_commits = result.stdout
         
@@ -524,7 +525,7 @@ Analyze the git diff and write a concise, informative commit message."""
         for pattern in ['*.py', '*.js', '*.ts', '*.go', '*.rs', '*.java', 'README*', 'package.json', 'requirements.txt', 'Cargo.toml']:
             result = subprocess.run(
                 ["find", str(self.repo_root), "-name", pattern, "-type", "f"],
-                capture_output=True, text=True
+                capture_output=True, text=True, encoding='utf-8'
             )
             important_files.extend(result.stdout.strip().split('\n'))
         
@@ -544,7 +545,7 @@ Key project files:
 
 Documentation directory: {docs_dir}
 """
-    
+
     def suggest_doc_updates(self, docs_dir: Path) -> Dict:
         """Suggest documentation updates based on project changes"""
         if not docs_dir.exists():
@@ -611,7 +612,7 @@ Suggest documentation updates needed based on recent changes."""
         except json.JSONDecodeError:
             print("⚠️ Could not parse LLM response as JSON")
             return {"updates": [], "suggestions": []}
-    
+
     def create_doc_file(self, filepath: Path, content_type: str) -> str:
         """Generate content for a new documentation file"""
         project_analysis = self.analyze_project_for_docs(filepath.parent)
@@ -619,7 +620,7 @@ Suggest documentation updates needed based on recent changes."""
         messages = [
             {
                 "role": "system",
-                "content": f"""You are a technical writer creating {content_type} documentation. 
+                "content": f"""You are a technical writer creating {content_type} documentation.
 Write clear, comprehensive documentation that follows best practices.
 Use markdown format with appropriate headings, code blocks, and examples."""
             },
@@ -636,7 +637,7 @@ Write comprehensive documentation that would be helpful for users/developers."""
         ]
         
         return self._call_llm(messages)
-    
+
     def update_doc_file(self, filepath: Path, update_instructions: str) -> str:
         """Update an existing documentation file"""
         try:
@@ -648,7 +649,7 @@ Write comprehensive documentation that would be helpful for users/developers."""
         messages = [
             {
                 "role": "system",
-                "content": """You are a technical writer updating documentation. 
+                "content": """You are a technical writer updating documentation.
 Provide updates in a simple patch format:
 
 PATCH_START
@@ -674,7 +675,7 @@ Provide patches to update this documentation."""
         ]
         
         return self._call_llm(messages)
-    
+
     def apply_doc_patches(self, filepath: Path, patches_text: str) -> bool:
         """Apply simple patches to a documentation file"""
         try:
@@ -1130,7 +1131,7 @@ def main():
             choice = input("Choose option [1/2/3]: ").strip()
             
             if choice == '1':
-                subprocess.run(["git", "add", "."], check=True)
+                subprocess.run(["git", "add", "."], check=True, encoding='utf-8')
                 print("✅ Auto-staged all changes")
             elif choice == '2':
                 all_selected_hunks = []
@@ -1162,7 +1163,7 @@ def main():
                         continue
                 
                 if selected_files:
-                    subprocess.run(["git", "add"] + selected_files, check=True)
+                    subprocess.run(["git", "add"] + selected_files, check=True, encoding='utf-8')
                     print(f"✅ Staged: {', '.join(selected_files)}")
                 else:
                     print("ℹ️ No files selected")
@@ -1197,7 +1198,7 @@ def main():
             print("❌ Commit cancelled")
     
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"❌ Error: {e}\n\n{traceback.format_exc()}")
         if "API key" in str(e):
             print("💡 Tip: Run 'python git-commit-tool.py config' to set up your configuration")
         sys.exit(1)
