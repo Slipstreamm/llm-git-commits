@@ -23,9 +23,9 @@ An AI-powered command-line tool that automatically generates meaningful commit m
 ## 🚀 Quick Start
 
 ### Prerequisites
-- Python 3.7+
+- Python 3.11+
 - Git repository
-- OpenRouter API key ([Get one here](https://openrouter.ai/))
+- API keys for OpenRouter, OpenAI, Anthropic, or Google Gemini
 
 ### Installation
 
@@ -106,13 +106,6 @@ The tool will:
 ```bash
 python git-commit-tool.py --api-key $OPENROUTER_API_KEY --model "openai/gpt-4-turbo" -i
 ```
-
-Supported models include:
-- `anthropic/claude-3-sonnet` (default)
-- `anthropic/claude-3-opus`
-- `openai/gpt-4-turbo`
-- `openai/gpt-3.5-turbo`
-- And many more via OpenRouter
 
 ## 🛠️ How It Works
 
