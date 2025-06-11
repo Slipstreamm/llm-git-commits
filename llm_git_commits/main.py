@@ -1172,7 +1172,7 @@ def main():
                         if confirm in ('', 'y', 'yes'):
                             tool.commit_staged_changes(message)
             
-            return # End of intelligent staging workflow
+            return
 
         elif args.auto_stage:
             # Auto-stage all changes
@@ -1197,11 +1197,12 @@ def main():
             # Ask user what to do
             print("\nOptions:")
             print("1. Auto-stage all changes")
-            print("2. Interactive staging")
+            print("2. Interactive staging (review and stage changes piece-by-piece)")
             print("3. Stage specific files")
-            
-            choice = input("Choose option [1/2/3]: ").strip()
-            
+            print("4. Intelligent Staging (use AI to automatically group related changes into separate, logical commits)")
+
+            choice = input("Choose option [1/2/3/4]: ").strip()
+
             if choice == '1':
                 subprocess.run(["git", "add", "."], check=True, encoding='utf-8')
                 print("✅ Auto-staged all changes")
@@ -1210,7 +1211,7 @@ def main():
                 for filepath in modified_files:
                     selected_hunks = tool.interactive_stage_hunks(filepath)
                     all_selected_hunks.extend(selected_hunks)
-                
+
                 if all_selected_hunks:
                     print(f"\n🎯 Staging {len(all_selected_hunks)} selected hunks...")
                     if not tool.stage_hunks(all_selected_hunks):
@@ -1223,7 +1224,7 @@ def main():
                 print("\nSelect files to stage:")
                 for i, filepath in enumerate(modified_files):
                     print(f"{i+1}. {filepath}")
-                
+
                 selections = input("Enter file numbers (comma-separated): ").strip()
                 selected_files = []
                 for s in selections.split(','):
@@ -1233,13 +1234,73 @@ def main():
                             selected_files.append(modified_files[idx])
                     except ValueError:
                         continue
-                
+
                 if selected_files:
                     subprocess.run(["git", "add"] + selected_files, check=True, encoding='utf-8')
                     print(f"✅ Staged: {', '.join(selected_files)}")
                 else:
                     print("ℹ️ No files selected")
                     return
+            elif choice == '4':
+                # Intelligent staging mode
+                print("🧠 Starting intelligent staging...")
+                stager = IntelligentStager(tool)
+                all_hunks = tool.get_all_hunks()
+
+                if not all_hunks:
+                    print("✨ No changes to process!")
+                    return
+
+                commit_plan_data = stager.plan_commits(all_hunks)
+                commit_plan = commit_plan_data.get('commit_plan', [])
+                unplanned_hunk_ids = commit_plan_data.get('unplanned_hunk_ids', [])
+
+                if not commit_plan:
+                    print("ℹ️ LLM did not propose any commits. You can stage changes manually.")
+                    return
+
+                print(f"\n🤖 LLM has proposed {len(commit_plan)} commit(s).")
+
+                # Create a map of hunk IDs to hunks for easy lookup
+                hunk_map = {h['id']: h for h in all_hunks}
+
+                # Execute the commit plan
+                for i, commit in enumerate(commit_plan):
+                    print("-" * 50)
+                    print(f"Commit {i+1}/{len(commit_plan)}:")
+                    print(commit['commit_message'])
+                    print(f"Hunks: {', '.join(commit['hunk_ids'])}")
+
+                    commit_hunks = [hunk_map[h_id] for h_id in commit['hunk_ids'] if h_id in hunk_map]
+
+                    if config.get('commit_flow') != 'automatic':
+                        confirm = input("Proceed with this commit? [Y/n]: ").lower()
+                        if confirm not in ('', 'y', 'yes'):
+                            print("❌ Commit skipped.")
+                            continue
+
+                    if tool.stage_hunks(commit_hunks):
+                        tool.commit_staged_changes(commit['commit_message'])
+                    else:
+                        print("❌ Failed to stage hunks for this commit.")
+
+                # Handle unplanned hunks
+                if unplanned_hunk_ids:
+                    print("-" * 50)
+                    print(f"ℹ️ {len(unplanned_hunk_ids)} hunk(s) were not included in the commit plan.")
+                    choice = input("Stage and commit remaining hunks in a separate commit? [y/N]: ").lower()
+                    if choice == 'y':
+                        remaining_hunks = [hunk_map[h_id] for h_id in unplanned_hunk_ids if h_id in hunk_map]
+                        if tool.stage_hunks(remaining_hunks):
+                            staged_diff = tool.get_staged_diff()
+                            message = tool.generate_commit_message(staged_diff)
+                            print(f"\n📝 Proposed commit for remaining changes:")
+                            print(message)
+                            confirm = input("Proceed with commit? [Y/n]: ").lower()
+                            if confirm in ('', 'y', 'yes'):
+                                tool.commit_staged_changes(message)
+
+                return # End of intelligent staging workflow
             else:
                 print("❌ Invalid choice")
                 return
