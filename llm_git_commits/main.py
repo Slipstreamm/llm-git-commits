@@ -93,11 +93,13 @@ class ConfigManager:
         """Create default configuration"""
         self.config['DEFAULT'] = {
             'provider': 'openrouter',
-            'model': 'google/gemini-2.0-flash-exp',
+            'model': 'google/gemini-2.5-flash-preview-05-20',
             'api_key': '',
             'docs_dir': 'docs',
             'auto_stage': 'false',
-            'interactive': 'false'
+            'interactive': 'false',
+            'intelligent_grouping_strategy': 'auto',
+            'commit_flow': 'interactive'
         }
         
         self.config['providers'] = {}
@@ -841,6 +843,33 @@ def configure_tool():
         config.set('interactive', 'true')
     elif interactive_choice in ['n', 'no']:
         config.set('interactive', 'false')
+
+    print("\n🧠 Intelligent Staging Settings")
+    current_grouping = config.get('intelligent_grouping_strategy') or 'auto'
+    print(f"Current grouping strategy: {current_grouping}")
+    print("1. auto (Let LLM decide)")
+    print("2. feature (Group by feature/bug)")
+    print("3. file (Group by file)")
+    grouping_choice = input("Choose grouping strategy [1/2/3 or Enter]: ").strip()
+    if grouping_choice == '1':
+        config.set('intelligent_grouping_strategy', 'auto')
+    elif grouping_choice == '2':
+        config.set('intelligent_grouping_strategy', 'feature')
+    elif grouping_choice == '3':
+        config.set('intelligent_grouping_strategy', 'file')
+
+    current_flow = config.get('commit_flow') or 'interactive'
+    print(f"\nCurrent commit flow: {current_flow}")
+    print("1. interactive (Confirm each commit)")
+    print("2. propose_all (Confirm all at once)")
+    print("3. automatic (No confirmation needed)")
+    flow_choice = input("Choose commit flow [1/2/3 or Enter]: ").strip()
+    if flow_choice == '1':
+        config.set('commit_flow', 'interactive')
+    elif flow_choice == '2':
+        config.set('commit_flow', 'propose_all')
+    elif flow_choice == '3':
+        config.set('commit_flow', 'automatic')
     
     # Save configuration
     config.save_config()
