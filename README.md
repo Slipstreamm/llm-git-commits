@@ -1,6 +1,6 @@
 # 🤖 Intelligent Git Commit Tool
 
-An AI-powered command-line tool that automatically generates meaningful commit messages and manages project documentation using Large Language Models (LLMs) from multiple providers including OpenRouter, OpenAI, Anthropic, and Google Gemini.-powered command-line tool that automatically generates meaningful commit messages and manages project documentation using Large Language Models (LLMs) via OpenRouter API.
+An AI-powered command-line tool that automatically generates meaningful commit messages and manages project documentation using Large Language Models (LLMs) from multiple providers including OpenRouter, OpenAI, Anthropic, and Google Gemini.
 
 ## ✨ Features
 
