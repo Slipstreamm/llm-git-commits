@@ -21,7 +21,7 @@ except ImportError:
     sys.exit(1)
 
 class GitCommitTool:
-    def __init__(self, api_key: str, model: str = "anthropic/claude-3-sonnet", base_url: str = "https://openrouter.ai/api/v1"):
+    def __init__(self, api_key: str, model: str = "google/gemini-2.5-flash-preview-05-20", base_url: str = "https://openrouter.ai/api/v1"):
         self.api_key = api_key
         self.model = model
         self.base_url = base_url
@@ -505,8 +505,10 @@ Provide patches to update this documentation."""
 def main():
     parser = argparse.ArgumentParser(description="Intelligent Git Commit Tool with LLM")
     parser.add_argument("--api-key", required=True, help="OpenRouter API key")
-    parser.add_argument("--model", default="anthropic/claude-3-sonnet", 
+    parser.add_argument("--model", default="anthropic/claude-3-sonnet",
                        help="Model to use (default: anthropic/claude-3-sonnet)")
+    parser.add_argument("--base-url", default="https://openrouter.ai/api/v1",
+                       help="Base URL for the OpenRouter API (default: https://openrouter.ai/api/v1)")
     parser.add_argument("--docs-dir", type=Path, help="Documentation directory to manage")
     parser.add_argument("--interactive", "-i", action="store_true", 
                        help="Interactive mode for staging hunks")
@@ -519,7 +521,7 @@ def main():
     args = parser.parse_args()
     
     try:
-        tool = GitCommitTool(args.api_key, args.model)
+        tool = GitCommitTool(args.api_key, args.model, args.base_url)
         
         if args.docs_only and args.docs_dir:
             # Documentation management mode
