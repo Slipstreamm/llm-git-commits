@@ -2,17 +2,44 @@ import * as vscode from 'vscode';
 import { exec } from 'child_process';
 
 export function activate(context: vscode.ExtensionContext) {
-  const disposable = vscode.commands.registerCommand('llmGitCommits.generateCommit', () => {
-    runGenerateCommit();
-  });
+  const disposable = vscode.commands.registerCommand(
+    'llmGitCommits.generateCommit',
+    () => {
+      runGenerateCommit();
+    },
+  );
 
   context.subscriptions.push(disposable);
+
+  const sidebarProvider = new SidebarProvider();
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      'llmGitCommits.sidebar',
+      sidebarProvider,
+    ),
+  );
 }
 
-function runGenerateCommit() {
+class SidebarProvider implements vscode.WebviewViewProvider {
+  resolveWebviewView(view: vscode.WebviewView) {
+    view.webview.options = { enableScripts: true };
+    view.webview.html = getSidebarContent();
+    view.webview.onDidReceiveMessage((msg) => {
+      if (msg.command === 'generate') {
+        runGenerateCommit();
+      }
+    });
+  }
+}
+
+async function runGenerateCommit() {
   const output = vscode.window.createOutputChannel('llm-git-commits');
   output.show(true);
-  exec('llm-git-commits --auto-stage --extension-json', (err, stdout, stderr) => {
+  const staged = await hasStagedChanges();
+  const cmd = staged
+    ? 'llm-git-commits --extension-json'
+    : 'llm-git-commits --auto-stage --extension-json';
+  exec(cmd, (err, stdout, stderr) => {
     if (err) {
       vscode.window.showErrorMessage(`Error running llm-git-commits: ${err.message}`);
       output.append(stderr);
@@ -21,10 +48,22 @@ function runGenerateCommit() {
     try {
       const data = JSON.parse(stdout.trim());
       showWebview(data.commit_message, output);
-    } catch (e) {
+    } catch {
       vscode.window.showErrorMessage('Failed to parse commit message output');
       output.append(stdout);
     }
+  });
+}
+
+function hasStagedChanges(): Promise<boolean> {
+  return new Promise((resolve) => {
+    exec('git diff --cached --name-only', (err, stdout) => {
+      if (err) {
+        resolve(false);
+        return;
+      }
+      resolve(stdout.trim().length > 0);
+    });
   });
 }
 
@@ -86,6 +125,21 @@ document.getElementById('cancel').addEventListener('click', () => {
   vscode.postMessage({ command: 'cancel' });
 });
 </script>
+</body>
+</html>`;
+}
+
+function getSidebarContent(): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<body>
+  <button id="generate">Generate Commit</button>
+  <script>
+    const vscode = acquireVsCodeApi();
+    document.getElementById('generate').addEventListener('click', () => {
+      vscode.postMessage({ command: 'generate' });
+    });
+  </script>
 </body>
 </html>`;
 }

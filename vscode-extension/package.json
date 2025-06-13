@@ -11,7 +11,8 @@
     "Other"
   ],
   "activationEvents": [
-    "onCommand:llmGitCommits.generateCommit"
+    "onCommand:llmGitCommits.generateCommit",
+    "onView:llmGitCommits.sidebar"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -20,7 +21,24 @@
         "command": "llmGitCommits.generateCommit",
         "title": "LLM Git: Generate Commit"
       }
-    ]
+    ],
+    "views": {
+      "scm": [
+        {
+          "id": "llmGitCommits.sidebar",
+          "name": "LLM Git Commits"
+        }
+      ]
+    },
+    "menus": {
+      "scm/title": [
+        {
+          "command": "llmGitCommits.generateCommit",
+          "when": "scmProvider == git",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "compile": "tsc -p ."
