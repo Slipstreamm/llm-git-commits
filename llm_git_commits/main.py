@@ -1217,6 +1217,16 @@ def main():
     parser.add_argument(
         "--commit-message", "-m", help="Override generated commit message"
     )
+    parser.add_argument(
+        "--extension-json",
+        action="store_true",
+        help="Output commit message JSON for VS Code extension and exit",
+    )
+    parser.add_argument(
+        "--no-confirm",
+        action="store_true",
+        help="Skip confirmation prompts",
+    )
 
     args = parser.parse_args()
 
@@ -1317,7 +1327,7 @@ def main():
                     hunk_map[h_id] for h_id in commit["hunk_ids"] if h_id in hunk_map
                 ]
 
-                if config.get("commit_flow") != "automatic":
+                if config.get("commit_flow") != "automatic" and not args.no_confirm:
                     confirm = input("Proceed with this commit? [Y/n]: ").lower()
                     if confirm not in ("", "y", "yes"):
                         print("❌ Commit skipped.")
@@ -1334,9 +1344,13 @@ def main():
                 print(
                     f"ℹ️ {len(unplanned_hunk_ids)} hunk(s) were not included in the commit plan."
                 )
-                choice = input(
-                    "Stage and commit remaining hunks in a separate commit? [y/N]: "
-                ).lower()
+                choice = (
+                    "y"
+                    if args.no_confirm
+                    else input(
+                        "Stage and commit remaining hunks in a separate commit? [y/N]: "
+                    ).lower()
+                )
                 if choice == "y":
                     remaining_hunks = [
                         hunk_map[h_id]
@@ -1348,9 +1362,12 @@ def main():
                         message = tool.generate_commit_message(staged_diff)
                         print(f"\n📝 Proposed commit for remaining changes:")
                         print(message)
-                        confirm = input("Proceed with commit? [Y/n]: ").lower()
-                        if confirm in ("", "y", "yes"):
+                        if args.no_confirm:
                             tool.commit_staged_changes(message)
+                        else:
+                            confirm = input("Proceed with commit? [Y/n]: ").lower()
+                            if confirm in ("", "y", "yes"):
+                                tool.commit_staged_changes(message)
 
             return
 
@@ -1515,12 +1532,18 @@ def main():
         else:
             commit_message = tool.generate_commit_message(staged_diff)
 
-        # Confirm commit
-        confirm = input("\nProceed with commit? [Y/n]: ").lower()
-        if confirm in ("", "y", "yes"):
+        if args.extension_json:
+            print(json.dumps({"commit_message": commit_message}))
+            return
+
+        if args.no_confirm:
             tool.commit_staged_changes(commit_message)
         else:
-            print("❌ Commit cancelled")
+            confirm = input("\nProceed with commit? [Y/n]: ").lower()
+            if confirm in ("", "y", "yes"):
+                tool.commit_staged_changes(commit_message)
+            else:
+                print("❌ Commit cancelled")
 
     except Exception as e:
         print(f"❌ Error: {e}\n\n{traceback.format_exc()}")
