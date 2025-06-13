@@ -1,5 +1,15 @@
 import * as vscode from 'vscode';
-import { exec } from 'child_process';
+import * as path from 'path';
+import { exec, execFile } from 'child_process';
+
+const python = process.platform === 'win32' ? 'python' : 'python3';
+const script = path.join(
+  __dirname,
+  '..',
+  'python',
+  'llm_git_commits',
+  'main.py',
+);
 
 export function activate(context: vscode.ExtensionContext) {
   const disposable = vscode.commands.registerCommand(
@@ -36,10 +46,9 @@ async function runGenerateCommit() {
   const output = vscode.window.createOutputChannel('llm-git-commits');
   output.show(true);
   const staged = await hasStagedChanges();
-  const cmd = staged
-    ? 'llm-git-commits --extension-json'
-    : 'llm-git-commits --auto-stage --extension-json';
-  exec(cmd, (err, stdout, stderr) => {
+  const args = staged ? ['--extension-json'] : ['--auto-stage', '--extension-json'];
+
+  execFile(python, [script, ...args], (err, stdout, stderr) => {
     if (err) {
       vscode.window.showErrorMessage(`Error running llm-git-commits: ${err.message}`);
       output.append(stderr);
@@ -81,15 +90,25 @@ function showWebview(message: string, output: vscode.OutputChannel) {
     if (m.command === 'commit') {
       panel.dispose();
       output.appendLine('Committing...');
-      exec(`llm-git-commits --auto-stage --commit-message ${JSON.stringify(message)} --no-confirm`, (err, stdout, stderr) => {
-        if (err) {
-          vscode.window.showErrorMessage(`Commit failed: ${err.message}`);
-          output.append(stderr);
-          return;
-        }
-        vscode.window.showInformationMessage('Commit created');
-        output.append(stdout);
-      });
+      execFile(
+        python,
+        [
+          script,
+          '--auto-stage',
+          '--commit-message',
+          message,
+          '--no-confirm',
+        ],
+        (err, stdout, stderr) => {
+          if (err) {
+            vscode.window.showErrorMessage(`Commit failed: ${err.message}`);
+            output.append(stderr);
+            return;
+          }
+          vscode.window.showInformationMessage('Commit created');
+          output.append(stdout);
+        },
+      );
     } else if (m.command === 'cancel') {
       panel.dispose();
     }
