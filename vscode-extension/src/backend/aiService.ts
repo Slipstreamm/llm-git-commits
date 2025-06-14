@@ -96,7 +96,17 @@ const providerDetails: Record<AIProvider, ProviderDetails> = {
 };
 
 export async function getAiCompletion(diff: string, config: ExtensionConfig): Promise<string> {
-    const { provider, commitStyle } = config;
+    const { commitStyle } = config;
+    const systemPrompt = getSystemPrompt(commitStyle);
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Generate a commit message for these changes:\n\n\`\`\`diff\n${diff}\n\`\`\`` },
+    ];
+    return getAiCompletionFromMessages(messages, config);
+}
+
+export async function getAiCompletionFromMessages(messages: any[], config: ExtensionConfig): Promise<string> {
+    const { provider } = config;
     const providerConfig = config.providers[provider];
 
     if (!providerConfig.apiKey) {
@@ -104,14 +114,8 @@ export async function getAiCompletion(diff: string, config: ExtensionConfig): Pr
     }
 
     const details = providerDetails[provider];
-    const systemPrompt = getSystemPrompt(commitStyle);
-    
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate a commit message for these changes:\n\n\`\`\`diff\n${diff}\n\`\`\`` },
-    ];
 
-    const endpoint = provider === 'gemini' 
+    const endpoint = provider === 'gemini'
         ? `${details.baseURL}/${details.modelFormat(providerConfig.model)}:generateContent?key=${providerConfig.apiKey}`
         : `${details.baseURL}/chat/completions`;
 
@@ -128,4 +132,38 @@ export async function getAiCompletion(diff: string, config: ExtensionConfig): Pr
 
     const data = await response.json();
     return details.responseExtractor(data).trim();
+}
+
+export interface FileDiff {
+    id: string;
+    filepath: string;
+    diff: string;
+}
+
+export interface CommitPlan {
+    commit_plan: { commit_message: string; file_ids: string[] }[];
+    unplanned_file_ids: string[];
+}
+
+export async function getCommitPlan(diffs: FileDiff[], config: ExtensionConfig): Promise<CommitPlan> {
+    const systemPrompt = `You are an expert at analyzing code changes and creating a logical series of git commits.\n` +
+        `Your task is to group all provided file diffs into focused commits.\n` +
+        `Return a JSON object with \"commit_plan\" (list of commits with commit_message and file_ids) ` +
+        `and \"unplanned_file_ids\" (list of files that do not fit).`;
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Here are the diffs:\n\n${JSON.stringify(diffs, null, 2)}` },
+    ];
+
+    const response = await getAiCompletionFromMessages(messages, config);
+    const match = response.match(/\{.*\}/s);
+    if (match) {
+        try {
+            return JSON.parse(match[0]);
+        } catch {
+            // ignore
+        }
+    }
+    throw new Error('Could not parse commit plan from LLM response');
 }

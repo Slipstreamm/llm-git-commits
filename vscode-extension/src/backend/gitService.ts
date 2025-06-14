@@ -44,7 +44,70 @@ export class GitService {
         }
         return diff;
     }
-    
+
+    public async getUnstagedDiff(): Promise<string> {
+        if (!this.git) {
+            return '';
+        }
+        let diff = await this.git.diff();
+        const untracked = (await this.git.raw(['ls-files', '--others', '--exclude-standard']))
+            .split('\n')
+            .filter(f => f);
+        for (const file of untracked) {
+            diff += await this.git.diff(['--no-index', '/dev/null', file]);
+        }
+        return diff;
+    }
+
+    public async hasStagedChanges(): Promise<boolean> {
+        if (!this.git) {
+            return false;
+        }
+        const status = await this.git.status();
+        return status.staged.length > 0;
+    }
+
+    public async getModifiedFiles(): Promise<string[]> {
+        if (!this.git) {
+            return [];
+        }
+        const status = await this.git.status();
+        const renamed = status.renamed.map(r => r.to);
+        return [
+            ...status.modified,
+            ...status.created,
+            ...status.deleted,
+            ...status.not_added,
+            ...renamed,
+            ...status.staged,
+        ];
+    }
+
+    public async getFileDiff(filePath: string): Promise<string> {
+        if (!this.git) {
+            return '';
+        }
+        const tracked = (await this.git.raw(['ls-files', '--', filePath])).trim().length > 0;
+        if (tracked) {
+            return await this.git.diff([filePath]);
+        }
+        return await this.git.diff(['--no-index', '/dev/null', filePath]);
+    }
+
+    public async stageFiles(files: string[]): Promise<void> {
+        if (!this.git || files.length === 0) {
+            return;
+        }
+        await this.git.add(files);
+    }
+
+    public async commit(message: string): Promise<void> {
+        if (!this.git) {
+            return;
+        }
+        await this.git.commit(message);
+    }
+
     // Add other git methods here as needed for future features
     // e.g., stageHunks, getModifiedFiles, etc.
 }
