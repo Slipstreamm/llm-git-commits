@@ -25,3 +25,5 @@ jobs:
       - name: Publish to Visual Studio Marketplace
         working-directory: ./vscode-extension
         run: npm run vsce:publish -- -p $VSCE_PAT
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
