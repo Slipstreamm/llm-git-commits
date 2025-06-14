@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src #{cspSource}; script-src 'nonce-#{nonce}';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Commit Settings</title>
+    <link rel="stylesheet" href="#{cssUri}">
+</head>
+<body>
+    <h1>AI Commit Settings</h1>
+
+    <div class="setting">
+        <label for="provider">AI Provider</label>
+        <select id="provider">
+            <option value="openrouter">OpenRouter</option>
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+            <option value="gemini">Google Gemini</option>
+        </select>
+    </div>
+
+    <div class="setting">
+        <label for="commitStyle">Commit Message Style</label>
+        <select id="commitStyle">
+            <option value="Conventional Commit">Conventional Commit</option>
+            <option value="Descriptive (Past Tense)">Descriptive (Past Tense)</option>
+            <option value="Emoji-Prefixed">Emoji-Prefixed</option>
+            <option value="Default">Default</option>
+        </select>
+    </div>
+
+    <hr>
+
+    <div id="provider-settings">
+        <div id="openrouter-settings" class="provider-config">
+            <h2>OpenRouter Settings</h2>
+            <div class="setting">
+                <label for="openrouter.apiKey">API Key</label>
+                <input type="password" id="openrouter.apiKey" data-key="openrouter.apiKey" placeholder="Enter your OpenRouter API key">
+            </div>
+            <div class="setting">
+                <label for="openrouter.model">Model</label>
+                <input type="text" id="openrouter.model" data-key="openrouter.model" placeholder="e.g., google/gemini-flash-1.5">
+            </div>
+        </div>
+
+        <div id="openai-settings" class="provider-config">
+            <h2>OpenAI Settings</h2>
+            <div class="setting">
+                <label for="openai.apiKey">API Key</label>
+                <input type="password" id="openai.apiKey" data-key="openai.apiKey" placeholder="Enter your OpenAI API key">
+            </div>
+            <div class="setting">
+                <label for="openai.model">Model</label>
+                <input type="text" id="openai.model" data-key="openai.model" placeholder="e.g., gpt-4o-mini">
+            </div>
+        </div>
+
+        <div id="anthropic-settings" class="provider-config">
+            <h2>Anthropic Settings</h2>
+            <div class="setting">
+                <label for="anthropic.apiKey">API Key</label>
+                <input type="password" id="anthropic.apiKey" data-key="anthropic.apiKey" placeholder="Enter your Anthropic API key">
+            </div>
+            <div class="setting">
+                <label for="anthropic.model">Model</label>
+                <input type="text" id="anthropic.model" data-key="anthropic.model" placeholder="e.g., claude-3-haiku-20240307">
+            </div>
+        </div>
+
+        <div id="gemini-settings" class="provider-config">
+            <h2>Google Gemini Settings</h2>
+            <div class="setting">
+                <label for="gemini.apiKey">API Key</label>
+                <input type="password" id="gemini.apiKey" data-key="gemini.apiKey" placeholder="Enter your Google Gemini API key">
+            </div>
+            <div class="setting">
+                <label for="gemini.model">Model</label>
+                <input type="text" id="gemini.model" data-key="gemini.model" placeholder="e.g., gemini-1.5-flash-latest">
+            </div>
+        </div>
+    </div>
+
+    <script nonce="#{nonce}" src="#{jsUri}"></script>
+</body>
+</html>

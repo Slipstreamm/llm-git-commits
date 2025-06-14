@@ -1,0 +1,55 @@
+body {
+    font-family: var(--vscode-font-family);
+    color: var(--vscode-editor-foreground);
+    background-color: var(--vscode-editor-background);
+    padding: 20px;
+}
+
+h1 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.setting {
+    margin-bottom: 20px;
+}
+
+label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+input[type="password"],
+input[type="text"],
+select {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid var(--vscode-input-border);
+    background-color: var(--vscode-input-background);
+    color: var(--vscode-input-foreground);
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--vscode-editor-widget-border);
+    margin: 20px 0;
+}
+
+h2 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-top: 20px;
+    margin-bottom: 15px;
+}
+
+.provider-config {
+    display: none;
+}
+
+.provider-config.visible {
+    display: block;
+}
