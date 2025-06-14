@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getAiCompletion } from './backend/aiService';
+import { getAiCompletion, getCommitPlan, FileDiff } from './backend/aiService';
 import { GitService } from './backend/gitService';
 import { ExtensionConfig } from './backend/types';
 
@@ -19,6 +19,11 @@ export function activate(context: vscode.ExtensionContext) {
         await generateCommitMessage();
     });
     context.subscriptions.push(generateCommitCommand);
+
+    const intelligentCommitCommand = vscode.commands.registerCommand('ai-commit.intelligentCommit', async () => {
+        await intelligentCommit();
+    });
+    context.subscriptions.push(intelligentCommitCommand);
 
     console.log('AI-Commit commands registered.');
 }
@@ -60,11 +65,13 @@ async function generateCommitMessage() {
     try {
         const gitService = await GitService.create();
         const repo = gitService.getRepository();
-        const stagedChanges = await gitService.getStagedDiff();
-
+        let stagedChanges = await gitService.getStagedDiff();
         if (!stagedChanges) {
-            vscode.window.showInformationMessage('No staged changes found. Please stage files to generate a commit message.');
-            return;
+            stagedChanges = await gitService.getUnstagedDiff();
+            if (!stagedChanges) {
+                vscode.window.showInformationMessage('No changes found to generate a commit message.');
+                return;
+            }
         }
 
         const config = getExtensionConfig();
@@ -93,6 +100,64 @@ async function generateCommitMessage() {
             }
         });
 
+    } catch (error: any) {
+        vscode.window.showErrorMessage(`AI Commit Error: ${error.message}`);
+    }
+}
+
+async function intelligentCommit() {
+    try {
+        const gitService = await GitService.create();
+        const files = await gitService.getModifiedFiles();
+
+        if (files.length === 0) {
+            vscode.window.showInformationMessage('No modified or untracked files found.');
+            return;
+        }
+
+        const diffs: FileDiff[] = [];
+        for (const f of files) {
+            const diff = await gitService.getFileDiff(f);
+            if (diff) {
+                diffs.push({ id: f, filepath: f, diff });
+            }
+        }
+
+        const config = getExtensionConfig();
+        const providerConfig = config.providers[config.provider];
+        if (!providerConfig.apiKey) {
+            vscode.window.showErrorMessage(`AI Commit: API Key for ${config.provider} is not set. Please set it in the settings.`, 'Open Settings')
+                .then(selection => {
+                    if (selection === 'Open Settings') {
+                        vscode.commands.executeCommand('ai-commit.showSettings');
+                    }
+                });
+            return;
+        }
+
+        await vscode.window.withProgress({
+            location: vscode.ProgressLocation.SourceControl,
+            title: `AI Commit: Planning commits with ${config.provider}...`,
+            cancellable: false
+        }, async () => {
+            try {
+                const plan = await getCommitPlan(diffs, config);
+                for (const commit of plan.commit_plan) {
+                    await gitService.stageFiles(commit.file_ids);
+                    await gitService.commit(commit.commit_message);
+                }
+                if (plan.unplanned_file_ids && plan.unplanned_file_ids.length) {
+                    await gitService.stageFiles(plan.unplanned_file_ids);
+                    const remainingDiff = await gitService.getStagedDiff();
+                    if (remainingDiff) {
+                        const msg = await getAiCompletion(remainingDiff, config);
+                        await gitService.commit(msg);
+                    }
+                }
+            } catch (error: any) {
+                vscode.window.showErrorMessage(`Error creating commits: ${error.message}`);
+            }
+        });
     } catch (error: any) {
         vscode.window.showErrorMessage(`AI Commit Error: ${error.message}`);
     }
