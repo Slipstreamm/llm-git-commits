@@ -111,9 +111,6 @@
     "package": "npm run compile",
     "vsce:package": "vsce package"
   },
-  "files": [
-    "dist"
-  ],
   "devDependencies": {
     "@types/node": "^18.0.0",
     "@types/vscode": "^1.101.0",
