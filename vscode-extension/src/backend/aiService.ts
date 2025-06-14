@@ -72,11 +72,24 @@ const providerDetails: Record<AIProvider, ProviderDetails> = {
         }),
         body: (model, messages) => {
             // Gemini has a different message format
-            const contents = messages.map(msg => ({
+            // System messages should be passed via the system_instruction field
+            const systemMessage = messages.find(msg => msg.role === 'system');
+            const userMessages = messages.filter(msg => msg.role !== 'system');
+
+            const contents = userMessages.map(msg => ({
                 role: msg.role === 'assistant' ? 'model' : msg.role,
                 parts: [{ text: msg.content }],
             }));
-            return { contents };
+
+            const body: any = { contents };
+            if (systemMessage) {
+                body.system_instruction = {
+                    role: 'system',
+                    parts: [{ text: systemMessage.content }],
+                };
+            }
+
+            return body;
         },
         responseExtractor: data => data.candidates[0].content.parts[0].text,
     },
