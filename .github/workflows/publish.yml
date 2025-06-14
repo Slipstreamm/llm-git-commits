@@ -1,0 +1,27 @@
+name: Publish VS Code Extension
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  publish:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        working-directory: ./vscode-extension
+        run: npm install
+
+      - name: Publish to Visual Studio Marketplace
+        working-directory: ./vscode-extension
+        run: npm run vsce:publish -- -p $VSCE_PAT
